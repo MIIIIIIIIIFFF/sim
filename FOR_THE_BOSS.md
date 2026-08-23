@@ -1,6 +1,6 @@
 # Overnight Edge — pour Simon (et l'équipe)
 
-**Version :** 2.9.0
+**Version :** 3.0.0
 **Installateur Windows :** `OvernightEdgeSetup.exe`
 
 Double-cliquez-le. Pas de Python. Pas de droits administrateur. Il s'installe
@@ -97,6 +97,54 @@ Yahoo limite les barres 5 minutes à ~60 jours. Pour aller plus loin :
 L'onglet « Analyse d'une valeur » accepte des dates **Du / Au** éloignées ;
 le badge « Précis » / « Approximatif » indique la source. Le tableau Overnight
 vs Intraday vs Buy & Hold devient pertinent sur 1-5 ans.
+
+---
+
+## Onglet « Optimiseur jour / nuit » ⚖
+
+Un outil graphique neuf pour trouver **le meilleur moment d'achat et de vente**
+pour un titre — ou pour tout le S&P 500 — en comparant les deux familles de
+créneaux :
+
+| Famille | Achat | Vente | Combos |
+|---------|-------|-------|--------|
+| **Jour** | matin 09:30 → 10:30 | après-midi 15:00 → 15:55 | 25 |
+| **Nuit** | après-clôture 16:00 → 16:30 | pré-ouverture 09:00 → 09:25 | 30 |
+
+Chaque créneau est évalué **par le rendement composé** (100 % réinvesti à
+chaque cycle, exactement comme le scan principal). L'optimiseur maximise ce
+rendement pour choisir le meilleur créneau **jour** et le meilleur créneau
+**nuit**.
+
+**Deux cercles animés** reportent la répartition des jours du meilleur créneau :
+arcs **verts** = jours gagnants, **gris** = jour à zéro, **rouges** = jours
+perdants — on voit d'un coup d'œil l'écart entre les profits et les pertes.
+L'animation se met à jour **en temps réel** pendant l'analyse (résultats
+progressifs par titre, en parallèle).
+
+Comment l'utiliser :
+1. **« Jours à remonter (0–30) »** : taille de la fenêtre (0 → dernière semaine).
+2. **« Jusqu'au »** : date de fin AAAA-MM-JJ (au plus ~60 jours en arrière pour le
+   pré-marché précis 5 min).
+3. **Univers** : `S&P 500 complet`, un favori sauvegardé, ou `Liste libre`.
+4. **Ticker libre + Ajouter** : ajoute un titre hors liste (même non présent
+   dans le S&P 500) → il est téléchargé puis intégré à l'optimisation.
+5. Cliquez **Optimiser**.
+
+Résultats :
+- **Table des créneaux** : tous les couples achat×vente, triés par composé
+  moyen sur les titres (meilleur surligné) — lignes **Jour** et **Nuit**.
+- **Détail des titres** : le meilleur créneau de chaque titre, son composé et
+  son taux de gain.
+- Chaque jour et chaque titre se voient ainsi sous l'angle de la fenêtre de
+  temps choisie, pour un terminal en direct (risque de composition intra-jour).
+
+Les créneaux de **Jour** n'achètent que pendant les heures de marché normales
+(09:30 → 10:30) ; les créneaux de **Nuit** n'achètent qu'à la clôture /
+after-hours (16:00 → 16:30) et ne vendent qu'en pré-ouverture (09:00 → 09:25).
+
+Les favoris sont sauvegardés sur disque (`%APPDATA%\OvernightEdge\optimizer_favorites.json`)
+et retrouvés au prochain lancement.
 
 ---
 

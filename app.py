@@ -254,10 +254,12 @@ class OvernightEdgeApp:
         rank_tab = ttk.Frame(notebook)
         movers_tab = ttk.Frame(notebook)
         stock_tab = ttk.Frame(notebook)
+        optimizer_tab = ttk.Frame(notebook)
         log_tab = ttk.Frame(notebook)
         notebook.add(rank_tab, text="Classement complet du S&P 500")
         notebook.add(movers_tab, text="Plus grands mouvements au quotidien")
         notebook.add(stock_tab, text="Analyse d'une valeur")
+        notebook.add(optimizer_tab, text="⚖ Optimiseur jour / nuit")
         notebook.add(log_tab, text="Journal")
 
         self.tree = self._make_tree(rank_tab)
@@ -265,6 +267,7 @@ class OvernightEdgeApp:
         self.movers_down = self._make_tree(self._labeled(movers_tab, "Plus fortes chutes de rang"))
 
         self._build_stock_tab(stock_tab)
+        self._build_optimizer_tab(optimizer_tab)
 
         self.log = scrolledtext.ScrolledText(log_tab, height=8, wrap="word")
         self.log.pack(fill="both", expand=True, padx=6, pady=6)
@@ -382,6 +385,16 @@ class OvernightEdgeApp:
         self.strategy_tree.tag_configure("pos", foreground="#15803d")
         self.strategy_tree.tag_configure("neg", foreground="#b91c1c")
         self.strategy_tree.pack(fill="x", padx=6, pady=2)
+
+    def _build_optimizer_tab(self, parent) -> None:
+        from overnight_edge import optimizer_panel
+
+        self.optimizer_panel = optimizer_panel.OptimizerPanel(
+            parent=parent,
+            root=self.root,
+            universe_df=None,
+            app=self,
+        )
 
     def _on_stock_analyze(self) -> None:
         ticker = self.stock_ticker.get().strip().upper()

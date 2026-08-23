@@ -78,8 +78,30 @@ def main() -> int:
             initial_rows = len(app.strategy_tree.get_children())
             tags = app.strategy_tree.item(app.strategy_tree.get_children()[0], "tags")
             reta = app._row_values(app._df.iloc[0].to_dict())
+
+            # Optimizer panel constructs and renders sample slots headlessly.
+            panel = app.optimizer_panel
+            assert panel is not None, "optimizer panel missing"
+            sample_rows = [
+                {"slot": "JOUR 10:00→15:00", "family": "Jour", "compounded": 12.5,
+                 "simple": 10.0, "win": 60.0, "avg": 0.3, "dd": -8.0, "days": 30},
+                {"slot": "NUIT 16:00→09:10", "family": "Nuit", "compounded": 8.2,
+                 "simple": 7.0, "win": 55.0, "avg": 0.2, "dd": -5.0, "days": 29},
+            ]
+            sample_detail = [
+                {"ticker": "NVDA", "family": "Jour", "slot": "JOUR 10:00→15:00",
+                 "compounded": 12.5, "win": 60.0},
+                {"ticker": "AAPL", "family": "Nuit", "slot": "NUIT 16:00→09:10",
+                 "compounded": 8.2, "win": 55.0},
+            ]
+            panel._render_slots(sample_rows, sample_detail, 30)
+            assert panel.slots_tree.get_children(), "optimizer slots empty"
+            assert panel.day_circle.canvas.find_all(), "day circle empty"
+            assert panel.night_circle.canvas.find_all(), "night circle empty"
+
             print("GUI smoke OK: rows", len(app.tree.get_children()),
-                  "strategy rows", initial_rows, "tags", tags)
+                  "strategy rows", initial_rows, "tags", tags,
+                  "optimizer_slots", len(panel.slots_tree.get_children()))
             return 0
     finally:
         H.history_dir = old_history_dir

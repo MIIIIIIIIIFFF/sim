@@ -21,6 +21,8 @@ hiddenimports = [
     "overnight_edge.scanner",
     "overnight_edge.sessions",
     "overnight_edge.strategy",
+    "overnight_edge.optimizer",
+    "overnight_edge.optimizer_panel",
     "overnight_edge.universe",
     "yfinance",
     "yfinance.scrapers",

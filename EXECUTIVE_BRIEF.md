@@ -1,6 +1,6 @@
 # Overnight Edge — Résumé pour la direction
 
-**Version :** 2.9.0
+**Version :** 3.0.0
 **Installation :** `OvernightEdgeSetup.exe` sur tout PC Windows 64 bits (pas de Python, pas d'administrateur)
 
 ## Question
@@ -42,6 +42,22 @@ accumulation locale des barres 5 min dans `%APPDATA%\OvernightEdge\bars_cache`
 (précis, grandit chaque jour) + repli automatique sur barres quotidiennes
 (~10 ans, marqué « Approximatif »). Permet des backtests sur plusieurs mois ou
 années dans l'onglet « Analyse d'une valeur ».
+
+## Onglet « Optimiseur jour / nuit »
+
+Trouve **le meilleur créneau de temps achat/vente** pour une valeur ou pour tout
+le S&P 500, en comparant deux familles :
+
+- **Jour** : achat matin 09:30→10:30, vente après-midi 15:00→15:55 (25 combos)
+- **Nuit** : achat after-hours 16:00→16:30, vente pré-ouverture 09:00→09:25 (30 combos)
+
+Chaque créneau est classé par **rendement composé**. Deux **cercles animés**
+montrent en temps réel la répartition des jours profit / zéro / perte du
+meilleur créneau de chaque famille. Univers au choix : S&P 500 complet, un
+favori sauvegardé sur disque, ou un ticker libre ajouté à la volée. Plage de
+dates 0–30 jours, jusqu'à ~60 jours en arrière (5 min précis). Résultats par
+créneau et par titre ; optimisation simultanée **jour et nuit**, par stock ou
+sur toute la liste.
 
 ## Timing
 
