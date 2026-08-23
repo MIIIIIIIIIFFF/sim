@@ -88,7 +88,7 @@ def create_shortcut(link_path: Path, target: Path, working_dir: Path) -> None:
     except Exception:
         pass
     bat = link_path.with_suffix(".bat")
-    bat.write_text(f'@echo off\nstart "" "{target}"\n', encoding="ascii")
+    bat.write_text(f'@echo off\nchcp 65001 >nul\nstart "" "{target}"\n', encoding="utf-8")
 
 
 def write_uninstaller(install_dir: Path, exe_path: Path) -> None:
@@ -100,6 +100,7 @@ def write_uninstaller(install_dir: Path, exe_path: Path) -> None:
         "\n".join(
             [
                 "@echo off",
+                "chcp 65001 >nul",
                 "echo Désinstallation d'Overnight Edge...",
                 f'del /q "{desktop_lnk}" 2>nul',
                 f'del /q "{desktop_bat}" 2>nul',
@@ -116,7 +117,7 @@ def write_uninstaller(install_dir: Path, exe_path: Path) -> None:
                 "pause",
             ]
         ),
-        encoding="ascii",
+        encoding="utf-8",
     )
 
 
