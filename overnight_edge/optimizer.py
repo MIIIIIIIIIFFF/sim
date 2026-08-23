@@ -45,6 +45,15 @@ DAY_SELL_MINUTES = (900, 915, 930, 940, 955)          # 15:00..15:55 afternoon s
 NIGHT_BUY_MINUTES = (960, 968, 975, 983, 990)        # 16:00..16:30 after-hours buys
 NIGHT_SELL_MINUTES = (540, 545, 550, 555, 560, 565)   # 09:00..09:25 pre-open sells
 
+# Crossover add-on windows ("crossing" the two circles). When enabled:
+# - the DAY family may also buy pre-open and sell after-hours (same trading day);
+# - the NIGHT family may also buy before the close (= the day afternoon sells)
+#   and sell after the open (= the day morning buys), still holding overnight.
+CROSS_DAY_BUY_MINUTES = (540, 545, 550, 555, 560, 565)   # 09:00..09:25 pre-open buys
+CROSS_DAY_SELL_MINUTES = (960, 968, 975, 983, 990)       # 16:00..16:30 after-hours sells
+CROSS_NIGHT_BUY_MINUTES = (900, 915, 930, 940, 955)      # 15:00..15:55 pre-close buys (= day sells)
+CROSS_NIGHT_SELL_MINUTES = (570, 585, 600, 615, 630)     # 09:30..10:30 post-open sells (= day buys)
+
 DAY_BUY_LABEL = "Jour"
 NIGHT_BUY_LABEL = "Nuit"
 
@@ -120,7 +129,13 @@ def _build_night_trades(bars: pd.DataFrame, buy_min: int, sell_min: int, start: 
     buy_from = _to_time(buy_min)
     buy_to = _to_time(min(buy_min + 10, 16 * 60 + 30))
     sell_from = _to_time(sell_min)
-    sell_to = _to_time(min(sell_min + 10, 9 * 60 + 29))
+    # Crossover night sells that target a regular-session window (>= 09:30,
+    # e.g. after the open) must be able to read those mid-day bars; the pre-open
+    # cap only applies to the standard pre-open sell windows (< 09:30).
+    if sell_min >= 9 * 60 + 30:
+        sell_to = _to_time(min(sell_min + 10, 16 * 60 + 29))
+    else:
+        sell_to = _to_time(min(sell_min + 10, 9 * 60 + 29))
     all_days = all_days_in_data(bars)
     trades: list[SessionTrade] = []
     for i, day in enumerate(all_days):
@@ -202,12 +217,35 @@ def evaluate_slot(
     )
 
 
-def families_candidates() -> list[tuple[str, list[tuple[int, int]]]]:
-    """Return (family, [(buy_min, sell_min), ...]) for both families."""
+def families_candidates(crossover: bool = False) -> list[tuple[str, list[tuple[int, int]]]]:
+    """Return (family, [(buy_min, sell_min), ...]) for both families.
+
+    With ``crossover=True`` the DAY and NIGHT candidate windows are widened so
+    each family can also use the other's timing territory (see the
+    ``CROSS_*_MINUTES`` windows): the two circles are allowed to "cross".
+    """
+    if crossover:
+        day_buys = _unique_sorted(DAY_BUY_MINUTES + CROSS_DAY_BUY_MINUTES)
+        day_sells = _unique_sorted(DAY_SELL_MINUTES + CROSS_DAY_SELL_MINUTES)
+        night_buys = _unique_sorted(NIGHT_BUY_MINUTES + CROSS_NIGHT_BUY_MINUTES)
+        night_sells = _unique_sorted(NIGHT_SELL_MINUTES + CROSS_NIGHT_SELL_MINUTES)
+    else:
+        day_buys, day_sells = DAY_BUY_MINUTES, DAY_SELL_MINUTES
+        night_buys, night_sells = NIGHT_BUY_MINUTES, NIGHT_SELL_MINUTES
     return [
-        ("day", [(b, s) for b in DAY_BUY_MINUTES for s in DAY_SELL_MINUTES]),
-        ("night", [(b, s) for b in NIGHT_BUY_MINUTES for s in NIGHT_SELL_MINUTES]),
+        ("day", [(b, s) for b in day_buys for s in day_sells]),
+        ("night", [(b, s) for b in night_buys for s in night_sells]),
     ]
+
+
+def _unique_sorted(items):
+    seen: set[int] = set()
+    out: list[int] = []
+    for x in items:
+        if x not in seen:
+            seen.add(x)
+            out.append(x)
+    return out
 
 
 def evaluate_all_slots(
@@ -215,10 +253,11 @@ def evaluate_all_slots(
     *,
     start: Optional[date] = None,
     end: Optional[date] = None,
+    crossover: bool = False,
 ) -> list[SlotResult]:
     """Evaluate every candidate slot in both families, sorted best-first."""
     results: list[SlotResult] = []
-    for family, slots in families_candidates():
+    for family, slots in families_candidates(crossover=crossover):
         for b, s in slots:
             r = evaluate_slot(bars, family, b, s, start=start, end=end)
             if r is not None:
@@ -232,10 +271,11 @@ def best_per_family(
     *,
     start: Optional[date] = None,
     end: Optional[date] = None,
+    crossover: bool = False,
 ) -> dict[str, Optional[SlotResult]]:
     """Return the best slot for each family (day and night)."""
     best: dict[str, Optional[SlotResult]] = {"day": None, "night": None}
-    for family, slots in families_candidates():
+    for family, slots in families_candidates(crossover=crossover):
         for b, s in slots:
             r = evaluate_slot(bars, family, b, s, start=start, end=end)
             if r is not None and (best[family] is None or r.compounded_return_pct > best[family].compounded_return_pct):

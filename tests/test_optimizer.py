@@ -183,3 +183,31 @@ def test_aggregate_rows_averages_across_tickers():
     assert row["family"] == "Nuit"
     assert row["compounded"] == pytest.approx(slot.compounded_return_pct)
     assert row["days"] == min(t.buy_date for t in slot.trades)
+
+
+def test_crossover_broadens_families():
+    """Enabling crossover widens the candidate window set of both families."""
+    std = dict(families_candidates(False))
+    cross = dict(families_candidates(True))
+    assert len(cross["day"]) > len(std["day"])
+    assert len(cross["night"]) > len(std["night"])
+
+
+def test_crossover_day_can_buy_preopen_and_sell_afterhours():
+    """A crossover DAY slot may buy pre-open and sell after-hours the same day."""
+    from overnight_edge.optimizer import evaluate_slot
+    bars = _bars()
+    r = evaluate_slot(bars, "day", 545, 960)  # 09:05 pre-open buy -> 16:00 after sell
+    assert r is not None
+    assert r.family == "day"
+    assert all(t.sell_date == t.buy_date for t in r.trades)  # still intra-day
+
+
+def test_crossover_night_can_buy_before_close_and_sell_after_open():
+    """A crossover NIGHT slot may buy before the close and sell after the open."""
+    from overnight_edge.optimizer import evaluate_slot
+    bars = _bars()
+    r = evaluate_slot(bars, "night", 955, 600)  # 15:55 buy -> next-day 10:00 sell
+    assert r is not None
+    assert r.family == "night"
+    assert all(t.sell_date > t.buy_date for t in r.trades)  # still overnight

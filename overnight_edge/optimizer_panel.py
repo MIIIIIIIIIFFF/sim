@@ -34,6 +34,35 @@ def _slot_label(family: str, bm: int, sm: int) -> str:
     return f"{'JOUR' if family == 'day' else 'NUIT'} {b}→{s}"
 
 
+def _tip(widget, text: str) -> None:
+    """Minimal hover tooltip bound to a widget (safe, best-effort)."""
+    tip: dict = {"label": None}
+
+    def show(_event=None) -> None:
+        try:
+            if tip["label"] is not None:
+                return
+            label = ttk.Label(None, text=text, background="#0f172a", foreground="#e2e8f0",
+                              justify="left", padding=6)
+            label.place(in_=widget, x=6, y=-40)
+            label.lift()
+            tip["label"] = label
+        except Exception:  # noqa: BLE001
+            pass
+
+    def hide(_event=None) -> None:
+        try:
+            if tip["label"] is not None:
+                tip["label"].destroy()
+                tip["label"] = None
+        except Exception:  # noqa: BLE001
+            tip["label"] = None
+
+    widget.bind("<Enter>", show, add="+")
+    widget.bind("<Leave>", hide, add="+")
+    widget.bind("<ButtonPress>", hide, add="+")
+
+
 class _Circle:
     """A Canvas circle that draws day-by-day segments (profit / zero / loss)."""
 
@@ -46,19 +75,22 @@ class _Circle:
         self.canvas = Canvas(self.box, width=150, height=150, bg="#0f172a", highlightthickness=0)
         self.canvas.pack(fill="both", expand=True)
 
-    def set_segments(self, segments: list[tuple[str, float]]) -> None:
+    def set_segments(self, segments: list[tuple[str, float]], offset=(0, 0), dash=None) -> None:
         """segments: list of (kind, magnitude) where kind is profit/zero/loss.
 
         Draws a compact arc spray colored by sign and labels the net value.
+        ``offset`` shifts the circle center (used to visually cross/overlay the
+        two circles); ``dash`` makes the arcs dashed (used on the overlay layer).
         """
         self.canvas.delete("all")
         w = self.canvas.winfo_width() or 150
         h = self.canvas.winfo_height() or 150
-        cx, cy = w / 2, h / 2
+        cx = w / 2 + offset[0]
+        cy = h / 2 + offset[1]
         r_out = min(w, h) / 2 - 8
         r_in = r_out - 18
 
-        colors = {"profit": "#0a8e3c", "zero": "#64748b", "loss": "#dc2626"}
+        colors = {"profit": "#22c55e", "zero": "#64748b", "loss": "#ef4444"}
         data = list(segments or [])
         total_abs = sum(abs(v) for _, v in data) or 1.0
 
@@ -72,6 +104,7 @@ class _Circle:
                 cx - r_out, cy - r_out, cx + r_out, cy + r_out,
                 start=start, extent=span,
                 style="arc", outline=colors.get(kind, "#64748b"), width=6,
+                dash=dash,
             )
             start += span + gap * 0.4
 
@@ -146,6 +179,15 @@ class OptimizerPanel:
         ttk.Label(row, text="Ticker libre").pack(side="left", padx=(10, 4))
         ttk.Entry(row, textvariable=self.new_ticker, width=8).pack(side="left", padx=4)
         ttk.Button(row, text="Ajouter", command=self._add_ticker).pack(side="left", padx=4)
+
+        self.cross_var = StringVar(value="0")
+        cross_box = ttk.LabelFrame(row, text="Croiser les cercles", padding=(6, 2))
+        cross_box.pack(side="left", padx=14)
+        ttk.Combobox(
+            cross_box, textvariable=self.cross_var, values=("Non", "Oui"), state="readonly", width=5,
+        ).pack(side="left")
+        _tip(cross_box,
+             "Quand actif, le Jour peut acheter en pré-marché / vendre en after-marché,\net la Nuit peut acheter avant la clôture / vendre après l'ouverture.\nLes deux cercles se croisent.")
 
         actions = ttk.Frame(self.parent)
         actions.pack(fill="x", padx=6, pady=4)
@@ -280,17 +322,22 @@ class OptimizerPanel:
 
         self.run_btn.configure(state="disabled")
         self.progress.set("0 / 0")
-        self.status.set(f"Optimisation de {len(tickers)} titres sur {days_back} jours...")
+        crossover = self.cross_var.get().strip() == "Oui"
+        self.status.set(
+            f"Optimisation de {len(tickers)} titres sur {days_back} jours"
+            + (" (créneaux croisés)" if crossover else "") + "..."
+        )
         self._thread = threading.Thread(
             target=self._optimize_worker,
-            args=(tickers, start, end, days_back),
+            args=(tickers, start, end, days_back, crossover),
             daemon=True,
         )
         self._thread.start()
 
-    def _optimize_worker(self, tickers: list[str], start: date, end: date, days_back: int) -> None:
+    def _optimize_worker(self, tickers: list[str], start: date, end: date, days_back: int, crossover: bool = False) -> None:
         from concurrent.futures import ThreadPoolExecutor, as_completed
 
+        self._crossover = crossover
         self._agg: dict[tuple, dict] = {}
         self._per_ticker: list[dict] = []
         throttle = max(1, min(len(tickers) // 20, 8))
@@ -298,7 +345,7 @@ class OptimizerPanel:
         self._render_partial(0, len(tickers), days_back)
         done = 0
         with ThreadPoolExecutor(max_workers=n_workers) as pool:
-            futures = {pool.submit(self._analyze_ticker, t, start, end): t for t in tickers}
+            futures = {pool.submit(self._analyze_ticker, t, start, end, crossover): t for t in tickers}
             for future in as_completed(futures):
                 ticker = futures[future]
                 try:
@@ -327,13 +374,13 @@ class OptimizerPanel:
 
         self.root.after(0, lambda: self._render_partial(done, len(tickers), days_back, final=True))
 
-    def _analyze_ticker(self, ticker: str, start: date, end: date) -> tuple[dict, list]:
+    def _analyze_ticker(self, ticker: str, start: date, end: date, crossover: bool = False) -> tuple[dict, list]:
         """Fetch + evaluate all slots for a single ticker (runs in pool thread)."""
         from overnight_edge.data import download_intraday_cached
         from overnight_edge.optimizer import evaluate_all_slots
 
         bars, _source = download_intraday_cached(ticker, 60)
-        slots = evaluate_all_slots(bars, start=start, end=end)
+        slots = evaluate_all_slots(bars, start=start, end=end, crossover=crossover)
         best = max(slots, key=lambda s: s.compounded_return_pct) if slots else None
         pt = {
             "ticker": ticker,
@@ -427,8 +474,16 @@ class OptimizerPanel:
         # Circles show the day-by-day outcome polarity of the best slot per family.
         best_day = next((r for r in rows if r["family"] == "Jour"), None)
         best_night = next((r for r in rows if r["family"] == "Nuit"), None)
-        self.day_circle.set_segments(self._trade_segments(best_day))
-        self.night_circle.set_segments(self._trade_segments(best_night))
+        cross = bool(getattr(self, "_crossover", False))
+        if cross:
+            # Overlay ("crossing") mode: shift the two circles toward each other
+            # and make the night arcs dashed so the overlapping rings read as two
+            # intertwined families sharing territory.
+            self.day_circle.set_segments(self._trade_segments(best_day), offset=(-10, 0))
+            self.night_circle.set_segments(self._trade_segments(best_night), offset=(10, 0), dash=(4, 3))
+        else:
+            self.day_circle.set_segments(self._trade_segments(best_day))
+            self.night_circle.set_segments(self._trade_segments(best_night))
 
         det = self.detail_tree
         for item in det.get_children():

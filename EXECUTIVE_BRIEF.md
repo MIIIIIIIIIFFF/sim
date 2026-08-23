@@ -59,6 +59,11 @@ dates 0–30 jours, jusqu'à ~60 jours en arrière (5 min précis). Résultats p
 créneau et par titre ; optimisation simultanée **jour et nuit**, par stock ou
 sur toute la liste.
 
+Option **Croiser les cercles** : autorise les familles à empiéter sur les
+heures étendues de l'autre — le Jour peut aussi acheter pré-marché / vendre
+after-marché, et la Nuit peut aussi acheter avant la clôture / vendre après
+l'ouverture — et superpose visuellement les deux cercles (arcs pointillés).
+
 ## Timing
 
 Achat = dernière barre 5 minutes 09:30–16:00 HE. Vente = dernière barre
