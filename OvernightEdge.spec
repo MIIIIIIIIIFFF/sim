@@ -1,0 +1,92 @@
+# -*- mode: python ; coding: utf-8 -*-
+"""Lean one-file EXE — do not collect_all pandas/numpy (pulls torch on this machine)."""
+
+from PyInstaller.utils.hooks import collect_data_files
+
+datas = collect_data_files("certifi") + collect_data_files("yfinance") + collect_data_files("pytz")
+
+hiddenimports = [
+    "overnight_edge",
+    "overnight_edge.bootstrap",
+    "overnight_edge.calendar",
+    "overnight_edge.compounding",
+    "overnight_edge.history",
+    "overnight_edge.celebration",
+    "overnight_edge.constants",
+    "overnight_edge.data",
+    "overnight_edge.models",
+    "overnight_edge.paths",
+    "overnight_edge.pipeline",
+    "overnight_edge.report",
+    "overnight_edge.scanner",
+    "overnight_edge.sessions",
+    "overnight_edge.strategy",
+    "overnight_edge.universe",
+    "yfinance",
+    "yfinance.scrapers",
+    "lxml",
+    "lxml.etree",
+    "lxml.html",
+    "tabulate",
+    "pytz",
+    "certifi",
+    "html5lib",
+    "bs4",
+    "peewee",
+    "frozendict",
+    "multitasking",
+    "platformdirs",
+    "curl_cffi",
+    "curl_cffi.requests",
+    "requests",
+    "urllib3",
+    "idna",
+    "charset_normalizer",
+    "soupsieve",
+]
+
+a = Analysis(
+    ["app.py"],
+    pathex=["."],
+    binaries=[],
+    datas=datas,
+    hiddenimports=hiddenimports,
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[],
+    excludes=[
+        "torch",
+        "torchvision",
+        "torchaudio",
+        "tensorflow",
+        "sklearn",
+        "matplotlib",
+        "scipy",
+        "IPython",
+        "jupyter",
+        "notebook",
+        "pytest",
+        "numba",
+        "sympy",
+        "cv2",
+        "PIL",
+    ],
+    noarchive=False,
+)
+
+pyz = PYZ(a.pure)
+
+exe = EXE(
+    pyz,
+    a.scripts,
+    a.binaries,
+    a.datas,
+    [],
+    name="OvernightEdge",
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=False,
+    console=False,
+    disable_windowed_traceback=False,
+)

@@ -1,0 +1,13 @@
+Overnight Edge
+Copyright (c) 2026
+
+This software is a historical research backtest of an overnight equity
+strategy (buy at the regular-session close, sell before the next open).
+
+It is not investment advice. Past performance does not guarantee future
+results. No commissions, slippage, or market-impact costs are modeled.
+
+Yahoo Finance data is retrieved at runtime and is subject to Yahoo's terms.
+An internet connection is required to run a scan.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
