@@ -95,8 +95,7 @@ def main() -> int:
                  "compounded": 8.2, "win": 55.0},
             ]
             panel._render_results(sample_rows, sample_detail, 30)
-            assert panel.day_circle.canvas.find_all(), "day circle empty"
-            assert panel.night_circle.canvas.find_all(), "night circle empty"
+            assert panel.rings.canvas.find_all(), "rings canvas empty"
             assert panel.detail_tree.get_children(), "detail tree empty"
 
             print("GUI smoke OK: rows", len(app.tree.get_children()),
