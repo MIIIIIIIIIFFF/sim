@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Optional
 
+import numpy as np
 import pandas as pd
 
 from overnight_edge.compounding import compound_returns, nightly_return
@@ -179,7 +180,9 @@ def extract_overnight_daily_trades(bars: pd.DataFrame) -> list[OvernightTrade]:
             continue
         buy_close = float(buy_bars["Close"].iloc[-1])
         sell_open = float(sell_bars["Open"].iloc[0])
-        if buy_close <= 0 or sell_open <= 0:
+        if not (buy_close > 0 and sell_open > 0) or not (
+            np.isfinite(buy_close) and np.isfinite(sell_open)
+        ):
             continue
         trades.append(
             OvernightTrade(
@@ -455,7 +458,9 @@ def _daily_intraday(
             continue
         open_p = float(day_bars["Open"].iloc[0])
         close_p = float(day_bars["Close"].iloc[-1])
-        if open_p <= 0 or close_p <= 0:
+        if not (open_p > 0 and close_p > 0) or not (
+            np.isfinite(open_p) and np.isfinite(close_p)
+        ):
             continue
         trades.append(
             OvernightTrade(
@@ -503,7 +508,9 @@ def _daily_buyhold(
         return None
     open_p = float(first["Open"].iloc[0])
     close_p = float(last["Close"].iloc[-1])
-    if open_p <= 0 or close_p <= 0:
+    if not (open_p > 0 and close_p > 0) or not (
+        np.isfinite(open_p) and np.isfinite(close_p)
+    ):
         return None
     trade = OvernightTrade(
         buy_date=days[0],

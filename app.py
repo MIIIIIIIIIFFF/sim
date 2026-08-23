@@ -53,6 +53,39 @@ def _apply_font_size(size: int, root: Tk | None = None) -> None:
         pass
 
 
+class _Tooltip:
+    """Lightweight hover tooltip for a widget (leaves French labels untouched)."""
+
+    def __init__(self, widget, text: str) -> None:
+        self.widget = widget
+        self.text = text
+        self._tip: object | None = None
+        widget.bind("<Enter>", self._show, add="+")
+        widget.bind("<Leave>", self._hide, add="+")
+        widget.bind("<ButtonPress>", self._hide, add="+")
+
+    def _show(self, _event=None) -> None:
+        if self._tip:
+            return
+        try:
+            x = self.widget.winfo_rootx() + 18
+            y = self.widget.winfo_rooty() + 24
+            self._tip = ttk.Label(None, text=self.text, background="#0f172a", foreground="#e2e8f0",
+                                  justify="left", padx=8, pady=4)
+            self._tip.place(in_=self.widget, x=6, y=-34)
+            self._tip.lift()
+        except Exception:
+            pass
+
+    def _hide(self, _event=None) -> None:
+        if self._tip is not None:
+            try:
+                self._tip.destroy()
+            except Exception:
+                pass
+            self._tip = None
+
+
 def _watchlist_tickers(df, search: str = "", sort_col: str = "rank", sort_desc: bool = False) -> list[str]:
     """Ordered ticker symbols from a ranking DataFrame for a TradingView watchlist."""
     if df is None or df.empty:
@@ -181,9 +214,16 @@ class OvernightEdgeApp:
         actions.pack(fill="x", **pad)
         self.run_btn = ttk.Button(actions, text="Lancer le scan du jour (S&P 500)", command=self._on_run)
         self.run_btn.pack(side="left")
-        ttk.Button(actions, text="Ouvrir le rapport HTML", command=self._open_html).pack(side="left", padx=6)
-        ttk.Button(actions, text="Ouvrir le dossier des rapports", command=self._open_folder).pack(side="left")
-        ttk.Button(actions, text="Copier la Watchlist (TradingView)", command=self._copy_watchlist).pack(side="left", padx=6)
+        _Tooltip(self.run_btn, "Télécharge les 5 dernières minutes du S&P 500,\nclassifie par rendement overnight composé.")
+        html_btn = ttk.Button(actions, text="Ouvrir le rapport HTML", command=self._open_html)
+        html_btn.pack(side="left", padx=6)
+        _Tooltip(html_btn, "Ouvre le dernier rapport HTML généré (report_latest.html).")
+        folder_btn = ttk.Button(actions, text="Ouvrir le dossier des rapports", command=self._open_folder)
+        folder_btn.pack(side="left")
+        _Tooltip(folder_btn, "Ouvre le dossier des CSV / manifestes / rapports.")
+        watch_btn = ttk.Button(actions, text="Copier la Watchlist (TradingView)", command=self._copy_watchlist)
+        watch_btn.pack(side="left", padx=6)
+        _Tooltip(watch_btn, "Copie les tickers dans la liste actuelle (ordre et recherche) ,\nséparés par virgule, pour la coller dans TradingView.")
 
         font_box = ttk.Frame(actions)
         font_box.pack(side="right")
@@ -566,6 +606,8 @@ class OvernightEdgeApp:
         tree.tag_configure("up", foreground="#15803d")
         tree.tag_configure("down", foreground="#b91c1c")
         tree.tag_configure("new", foreground="#1d4ed8")
+        tree.tag_configure("evenrow", background="#eef2f7")
+        tree.tag_configure("oddrow", background="#ffffff")
         return tree
 
     def _labeled_entry(self, parent, label: str, var: StringVar, width: int) -> None:
@@ -655,6 +697,11 @@ class OvernightEdgeApp:
             return "down"
         return ""
 
+    def _row_stripe_tags(self, base_tag: str, idx: int) -> tuple:
+        """Combine the semantic color tag with an even/odd stripe for readability."""
+        stripe = "evenrow" if idx % 2 == 0 else "oddrow"
+        return (stripe, base_tag) if base_tag else (stripe,)
+
     def _refresh_table(self) -> None:
         if self._df is None:
             return
@@ -670,15 +717,17 @@ class OvernightEdgeApp:
         for tree in (self.tree,):
             for item in tree.get_children():
                 tree.delete(item)
-            for _, r in view.iterrows():
-                tree.insert("", END, values=self._row_values(r), tags=(self._tag_for(r),))
+            for i, (_, r) in enumerate(view.iterrows()):
+                tree.insert("", END, values=self._row_values(r),
+                            tags=self._row_stripe_tags(self._tag_for(r), i))
 
         movers = movers_summary(self._df, top_n=15)
         for tree, frame in ((self.movers_up, movers["climbers"]), (self.movers_down, movers["fallers"])):
             for item in tree.get_children():
                 tree.delete(item)
-            for _, r in frame.iterrows():
-                tree.insert("", END, values=self._row_values(r), tags=(self._tag_for(r),))
+            for i, (_, r) in enumerate(frame.iterrows()):
+                tree.insert("", END, values=self._row_values(r),
+                            tags=self._row_stripe_tags(self._tag_for(r), i))
 
     def _sort_by(self, col: str, tree) -> None:
         if self._df is None:

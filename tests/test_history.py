@@ -45,6 +45,38 @@ def test_new_name_flagged():
     assert bool(out.iloc[0]["is_new"]) is True
 
 
+def test_attach_variance_tolerates_malformed_prev():
+    """NaN rank/return or repeated tickers in prev must not crash."""
+    prev = pd.DataFrame(
+        {
+            "rank": [float("nan"), 1, 2],
+            "ticker": ["AAA", "BBB", "BBB"],  # repeated BBB
+            "compounded_return_pct": [float("nan"), 5.0, 5.0],
+        }
+    )
+    cur = pd.DataFrame(
+        {
+            "rank": [1, 2],
+            "ticker": ["AAA", "BBB"],
+            "compounded_return_pct": [4.0, 6.0],
+        }
+    )
+    out = attach_variance(cur, prev)
+    bbb = out[out["ticker"] == "BBB"].iloc[0]
+    # BBB prev rank=1 (first kept), cur rank=2 -> rank_change = 1 - 2 = -1
+    assert int(bbb["rank_change"]) == -1
+    # AAA has NaN prev rank; no crash, prev_rank stays NA
+    aaa = out[out["ticker"] == "AAA"].iloc[0]
+    assert pd.isna(aaa["prev_rank"])
+
+
+def test_attach_variance_missing_ticker_in_current_is_new():
+    prev = pd.DataFrame({"rank": [1], "ticker": ["AAA"], "compounded_return_pct": [1.0]})
+    cur = pd.DataFrame({"rank": [1], "ticker": ["ZZZ"], "compounded_return_pct": [2.0]})
+    out = attach_variance(cur, prev)
+    assert bool(out.iloc[0]["is_new"]) is True
+
+
 def test_snapshot_roundtrip(tmp_path, monkeypatch):
     monkeypatch.setattr("overnight_edge.history.history_dir", lambda: tmp_path)
     df = pd.DataFrame(

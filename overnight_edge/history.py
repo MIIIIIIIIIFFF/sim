@@ -87,6 +87,17 @@ def load_previous_snapshot(current_date: str) -> tuple[Optional[pd.DataFrame], O
     return load_snapshot(day), day
 
 
+def _to_number(value, default):
+    """Coerce to a finite float, or return ``default`` for missing/NaN/inf."""
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return default
+    if f != f or f == float("inf") or f == float("-inf"):
+        return default
+    return f
+
+
 def attach_variance(current: pd.DataFrame, previous: Optional[pd.DataFrame]) -> pd.DataFrame:
     """
     Add day-to-day columns.
@@ -107,17 +118,32 @@ def attach_variance(current: pd.DataFrame, previous: Optional[pd.DataFrame]) -> 
     prev = previous.drop_duplicates(subset="ticker").set_index("ticker")
     for idx, row in out.iterrows():
         ticker = row["ticker"]
+        if not isinstance(ticker, str) or not ticker:
+            out.at[idx, "is_new"] = True
+            continue
         if ticker not in prev.index:
             out.at[idx, "is_new"] = True
             continue
+
+        def _finite(value, default):
+            try:
+                f = float(value)
+                return f if (f == f and f != float("inf") and f != float("-inf")) else default
+            except (TypeError, ValueError):
+                return default
+
         if "rank" in prev.columns:
-            prev_rank = int(prev.at[ticker, "rank"])
-            out.at[idx, "prev_rank"] = prev_rank
-            out.at[idx, "rank_change"] = prev_rank - int(row["rank"])
+            prev_rank = _to_number(prev.at[ticker, "rank"], default=None)
+            cur_rank = _to_number(row["rank"], default=None)
+            if prev_rank is not None and cur_rank is not None:
+                out.at[idx, "prev_rank"] = prev_rank
+                out.at[idx, "rank_change"] = int(prev_rank - cur_rank)
         if "compounded_return_pct" in prev.columns:
-            prev_ret = float(prev.at[ticker, "compounded_return_pct"])
-            out.at[idx, "prev_compounded_return_pct"] = prev_ret
-            out.at[idx, "compounded_delta_pct"] = float(row["compounded_return_pct"]) - prev_ret
+            prev_ret = _to_number(prev.at[ticker, "compounded_return_pct"], default=None)
+            cur_ret = _to_number(row["compounded_return_pct"], default=None)
+            if prev_ret is not None and cur_ret is not None:
+                out.at[idx, "prev_compounded_return_pct"] = prev_ret
+                out.at[idx, "compounded_delta_pct"] = cur_ret - prev_ret
     return out
 
 

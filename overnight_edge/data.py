@@ -150,6 +150,13 @@ def _merge_bars(cached: pd.DataFrame, fresh: pd.DataFrame) -> pd.DataFrame:
     return out.sort_index()
 
 
+def _coverage_days(frame: pd.DataFrame) -> int:
+    """Largest whole calendar-day span covered by ``frame``'s timestamp index."""
+    if frame is None or frame.empty:
+        return 0
+    return max(0, int((frame.index.max() - frame.index.min()).days))
+
+
 def download_intraday_cached(
     ticker: str,
     lookback_days: int,
@@ -162,34 +169,50 @@ def download_intraday_cached(
 
     Returns ``(bars, source)`` where ``source`` is one of:
     - ``"5m_precise"``: 5-minute bars (from cache + fresh Yahoo), precise to the bar.
+      This is used whenever the merged 5-minute data actually covers the
+      requested ``lookback_days`` (cache + Yahoo's ~60-day recent window).
     - ``"daily_fallback"``: daily bars used because the 5-minute window cannot
       cover ``lookback_days``. Buy=day T close, sell=day T+1 open (approximation).
 
     The 5-minute cache is written through on every successful fetch so the
-    window grows over time; a user who scans daily accumulates a multi-year
-    precise dataset after enough time.
+    next day of scanning grows the precise window over time; only when the
+    requested bracket exceeds what 5-minute data can represent do we fall
+    back to daily bars. The two data families (5-minute intraday vs daily
+    OHLC) have different buy/sell conventions, so they are never mixed in a
+    single result.
     """
     cached = load_cached_bars(ticker)
     five_min_lookback = min(lookback_days, FIVE_MIN_MAX_CALENDAR_DAYS)
 
-    try:
-        fresh = download_intraday_bars(
-            ticker,
-            five_min_lookback,
-            max_retries=max_retries,
-            retry_delay=retry_delay,
-        )
-    except Exception:  # noqa: BLE001
-        fresh = pd.DataFrame()
+    fresh = pd.DataFrame()
+    if lookback_days > 0:
+        try:
+            fresh = download_intraday_bars(
+                ticker,
+                five_min_lookback,
+                max_retries=max_retries,
+                retry_delay=retry_delay,
+            )
+        except Exception:  # noqa: BLE001
+            fresh = pd.DataFrame()
 
+    merged = cached
     if not fresh.empty:
         merged = _merge_bars(cached, normalize_bars(fresh))
         save_cached_bars(ticker, merged)
-        return merged, "5m_precise"
 
-    # Fresh fetch failed — use cache alone if it covers the window.
-    if not cached.empty:
-        return cached, "5m_precise"
+    # If we have any 5-minute data, decide whether it spans the requested
+    # calendar window. A short request (normal scan) is always covered by the
+    # fresh ~60-day fetch; a wide bracket (custom date range / long history)
+    # only counts when the accumulated cache has grown enough. Tolerance of 2
+    # days avoids a spurious fallback at Yahoo's day boundary.
+    if merged is not None and not merged.empty:
+        if _coverage_days(merged) >= max(0, lookback_days - 2):
+            return merged, "5m_precise"
+        # 5-minute data exists but cannot cover the bracket: use daily bars
+        # alone (do not mix with the 5-minute family inside one result).
+        daily = download_daily_bars(ticker, max_retries=max_retries, retry_delay=retry_delay)
+        return normalize_bars(daily), "daily_fallback"
 
     # No 5-minute data at all: fall back to daily bars.
     daily = download_daily_bars(ticker, max_retries=max_retries, retry_delay=retry_delay)

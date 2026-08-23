@@ -87,6 +87,36 @@ class TestDailyFallbackExtraction:
         assert result.compounded_return_pct == pytest.approx((1.02 * 1.01 - 1) * 100)
 
 
+class TestDownloadIntradayCachedDecision:
+    """Verify the fallback gate in download_intraday_cached."""
+
+    def test_short_range_returns_5m_precise(self, tmp_path, monkeypatch):
+        idx = pd.date_range("2025-01-06 15:55", periods=40, freq="24h", tz=ET)
+        fresh = pd.DataFrame({"Open": [100.0] * 40, "Close": [101.0] * 40}, index=idx)
+        monkeypatch.setattr("overnight_edge.data.bars_cache_dir", lambda: tmp_path)
+        monkeypatch.setattr("overnight_edge.data.download_intraday_bars",
+                            lambda *a, **k: fresh)
+        monkeypatch.setattr("overnight_edge.data.download_daily_bars",
+                            lambda *a, **k: pytest.fail("should not fall back"))
+        bars, source = download_intraday_cached("SHORT", 30)
+        assert source == "5m_precise"
+        assert not bars.empty
+
+    def test_wide_range_falls_back_to_daily(self, tmp_path, monkeypatch):
+        idx = pd.date_range("2024-01-01", periods=10, freq="24h", tz=ET)
+        fresh = pd.DataFrame({"Open": [100.0] * 10, "Close": [101.0] * 10}, index=idx)
+        monkeypatch.setattr("overnight_edge.data.bars_cache_dir", lambda: tmp_path)
+        monkeypatch.setattr("overnight_edge.data.download_intraday_bars",
+                            lambda *a, **k: fresh)
+        daily_idx = pd.date_range("2024-01-01", periods=500, freq="24h", tz=ET)
+        daily = pd.DataFrame({"Open": [100.0] * 500, "Close": [101.0] * 500}, index=daily_idx)
+        monkeypatch.setattr("overnight_edge.data.download_daily_bars",
+                            lambda *a, **k: daily)
+        bars, source = download_intraday_cached("AAPL", 300)
+        assert source == "daily_fallback"
+        assert len(bars) == 500
+
+
 class TestCompareStrategiesDaily:
     def test_daily_source_uses_daily_paths(self):
         d1, d2, d3 = date(2025, 1, 6), date(2025, 1, 7), date(2025, 1, 8)

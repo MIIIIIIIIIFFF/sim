@@ -1,6 +1,6 @@
 # Overnight Edge — pour Simon (et l'équipe)
 
-**Version :** 2.8.0
+**Version :** 2.9.0
 **Installateur Windows :** `OvernightEdgeSetup.exe`
 
 Double-cliquez-le. Pas de Python. Pas de droits administrateur. Il s'installe

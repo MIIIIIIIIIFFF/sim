@@ -78,4 +78,12 @@ def fetch_sp500_universe() -> pd.DataFrame:
 
 
 def parse_ticker_list(raw: str) -> list[str]:
-    return [_normalize_symbol(t) for t in raw.split(",") if t.strip()]
+    seen: set[str] = set()
+    out: list[str] = []
+    for t in raw.split(","):
+        norm = _normalize_symbol(t)
+        if not norm or norm in seen:
+            continue
+        seen.add(norm)
+        out.append(norm)
+    return out

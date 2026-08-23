@@ -1,6 +1,6 @@
 # Overnight Edge — Résumé pour la direction
 
-**Version :** 2.8.0
+**Version :** 2.9.0
 **Installation :** `OvernightEdgeSetup.exe` sur tout PC Windows 64 bits (pas de Python, pas d'administrateur)
 
 ## Question

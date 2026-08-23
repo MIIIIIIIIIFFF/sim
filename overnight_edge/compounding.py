@@ -17,6 +17,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Sequence
 
+import math
+
 
 @dataclass(frozen=True)
 class CompoundResult:
@@ -61,6 +63,12 @@ def compound_returns(
     path: list[float] = [equity]
 
     for r in returns:
+        try:
+            r = float(r)
+        except (TypeError, ValueError):
+            raise ValueError("returns must be numeric")
+        if not math.isfinite(r):
+            raise ValueError("returns must be finite (no NaN/inf)")
         if r <= -1.0:
             equity = 0.0
         else:
@@ -82,10 +90,14 @@ def annotate_equity(
     starting_capital: float,
 ) -> list[dict]:
     """Attach running compounded equity to each trade row."""
+    if starting_capital <= 0:
+        raise ValueError("starting_capital must be positive")
     equity = float(starting_capital)
     annotated: list[dict] = []
     for trade in trade_dicts:
         r = float(trade["return_pct"]) / 100.0
+        if not math.isfinite(r):
+            raise ValueError("returns must be finite")
         before = equity
         if r <= -1.0:
             equity = 0.0
