@@ -405,8 +405,15 @@ class OvernightEdgeApp:
                         lambda: self._stock_done("« Du » doit être antérieur ou égal à « Au »."),
                     )
                     return
+                # If the user's bracket exceeds Yahoo's 5-minute window, grow
+                # the lookback so the daily fallback kicks in for the older part.
+                if start is not None and end is not None:
+                    span = (end - start).days
+                    if span > lookback:
+                        lookback = span + 10
 
-            bars = download_intraday_bars(ticker, lookback)
+            from overnight_edge.data import download_intraday_cached
+            bars, source = download_intraday_cached(ticker, lookback)
             start_capital = float(
                 self.capital.get().replace(",", "").replace("$", "").strip()
                 if self.capital.get().strip()
@@ -418,16 +425,17 @@ class OvernightEdgeApp:
                 end_date=end,
                 max_trades=max_trades,
                 starting_capital=start_capital,
+                source=source,
             )
             result = strategies["overnight"]
             if result is None:
                 self.root.after(0, lambda t=ticker: self._stock_done(f"{t} : aucune nuit dans cette période."))
                 return
-            self.root.after(0, lambda r=result, s=strategies: self._stock_render(ticker, r, s))
+            self.root.after(0, lambda r=result, s=strategies, src=source: self._stock_render(ticker, r, s, src))
         except BaseException as exc:  # noqa: BLE001
             self.root.after(0, lambda: self._stock_done(f"{ticker}: {exc}"))
 
-    def _render_strategy_table(self, strategies: dict) -> None:
+    def _render_strategy_table(self, strategies: dict, source: str = "5m_precise") -> None:
         """Fill the Overnight vs Intraday vs Buy & Hold comparison table."""
         tree = self.strategy_tree
         for item in tree.get_children():
@@ -469,23 +477,36 @@ class OvernightEdgeApp:
             tags = ("best",) if key == best_key else ("pos" if res.compounded_return_pct >= 0 else "neg",)
             tree.insert("", END, values=values, tags=tags)
 
+        if source == "daily_fallback":
+            precision_note = (
+                " ⚠ Approximatif : barres quotidiennes (pas de pré-marché). "
+                "Achat = close du jour T, vente = open du jour T+1."
+            )
+        else:
+            precision_note = ""
         self.strategy_meta.set(
             "Comparaison sur la même période et le même capital de départ. "
             "a) Overnight = tous les soirs 16:00 → 09:29 ; "
             "b) Intraday = chaque séance 09:30 → 16:00 ; "
             "c) Buy & Hold = achat au 1er open, vente au dernier close (un seul hold). "
             "Le composé réinvestit chaque nuit (ou chaque jour pour Intraday)."
+            + precision_note
         )
 
-    def _stock_render(self, ticker: str, result, strategies=None) -> None:
+    def _stock_render(self, ticker: str, result, strategies=None, source: str = "5m_precise") -> None:
         self.stock_btn.configure(state="normal")
         if strategies:
-            self._render_strategy_table(strategies)
+            self._render_strategy_table(strategies, source)
         self.stock_btn.configure(state="normal")
         n = len(result.trades)
+        precision = (
+            "Précis (barres 5 min)"
+            if source == "5m_precise"
+            else "Approximatif (barres quotidiennes — pas de pré-marché)"
+        )
         head = (
             f"{ticker}  |  {n} nuits de détention  "
-            f"({result.first_trade_date} → {result.last_trade_date})"
+            f"({result.first_trade_date} → {result.last_trade_date})  ·  {precision}"
         )
         stats = (
             f"Composé : {result.compounded_return_pct:+.2f}%   "

@@ -1,6 +1,6 @@
 # Overnight Edge — pour Simon (et l'équipe)
 
-**Version :** 2.7.0
+**Version :** 2.8.0
 **Installateur Windows :** `OvernightEdgeSetup.exe`
 
 Double-cliquez-le. Pas de Python. Pas de droits administrateur. Il s'installe
@@ -83,6 +83,20 @@ reste figée. L'outil se met à jour au fil des jours.
 Bouton en haut à droite : copie la liste des tickers affichés (ordre + filtre
 du champ « Rechercher ») dans le presse-papiers → à coller dans TradingView
 via **Paste symbols**.
+
+## Historique long (accumulation locale + repli quotidien)
+
+Yahoo limite les barres 5 minutes à ~60 jours. Pour aller plus loin :
+
+- **Accumulation locale** : chaque scan sauvegarde les barres 5 min dans
+  `%APPDATA%\OvernightEdge\bars_cache`. La fenêtre précise grandit chaque jour.
+- **Repli quotidien** : pour une période > 60 jours, l'outil utilise les barres
+  quotidiennes (~10 ans) : achat = close du jour T, vente = open du jour T+1.
+  Résultat marqué **« Approximatif »** (pas de vrai pré-marché 09:29).
+
+L'onglet « Analyse d'une valeur » accepte des dates **Du / Au** éloignées ;
+le badge « Précis » / « Approximatif » indique la source. Le tableau Overnight
+vs Intraday vs Buy & Hold devient pertinent sur 1-5 ans.
 
 ---
 

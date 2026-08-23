@@ -10,14 +10,14 @@ from typing import Callable, Optional
 import pandas as pd
 
 from overnight_edge.compounding import annotate_equity
-from overnight_edge.data import download_intraday_bars
+from overnight_edge.data import download_intraday_cached
 from overnight_edge.models import ScanConfig, ScanResult
 from overnight_edge.strategy import backtest_overnight
 
 
 def _analyze_one(ticker: str, config: ScanConfig) -> Optional[dict]:
     try:
-        bars = download_intraday_bars(
+        bars, _source = download_intraday_cached(
             ticker,
             config.lookback_days,
             max_retries=config.max_retries,

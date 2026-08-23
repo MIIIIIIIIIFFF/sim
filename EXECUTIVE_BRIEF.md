@@ -1,6 +1,6 @@
 # Overnight Edge — Résumé pour la direction
 
-**Version :** 2.7.0
+**Version :** 2.8.0
 **Installation :** `OvernightEdgeSetup.exe` sur tout PC Windows 64 bits (pas de Python, pas d'administrateur)
 
 ## Question
@@ -34,6 +34,14 @@ automatiquement au fil des jours de bourse.
 
 Bouton copiant la liste des tickers affichés dans le presse-papiers, à coller
 dans TradingView (**Paste symbols**). Gain de temps quotidien immédiat.
+
+## Historique long (accumulation + repli)
+
+Yahoo limite les barres 5 minutes à ~60 jours. Pour les périodes plus longues :
+accumulation locale des barres 5 min dans `%APPDATA%\OvernightEdge\bars_cache`
+(précis, grandit chaque jour) + repli automatique sur barres quotidiennes
+(~10 ans, marqué « Approximatif »). Permet des backtests sur plusieurs mois ou
+années dans l'onglet « Analyse d'une valeur ».
 
 ## Timing
 

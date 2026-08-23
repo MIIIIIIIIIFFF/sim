@@ -71,4 +71,4 @@ python run.py --tickers AAPL,MSFT,NVDA --days 20 --capital 25000
 
 ---
 
-*Overnight Edge v2.7.0 — research tool, not investment advice.*
+*Overnight Edge v2.8.0 — research tool, not investment advice.*

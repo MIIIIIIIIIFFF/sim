@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "overnight-edge"
-version = "2.7.0"
+version = "2.8.0"
 description = "Rank large-cap stocks by day-to-day compounded overnight return (buy at close, sell pre-open)"
 readme = "README.md"
 requires-python = ">=3.10"

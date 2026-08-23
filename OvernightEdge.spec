@@ -43,6 +43,7 @@ hiddenimports = [
     "idna",
     "charset_normalizer",
     "soupsieve",
+    "pyarrow",
 ]
 
 a = Analysis(

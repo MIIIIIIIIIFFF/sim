@@ -35,3 +35,11 @@ def history_dir() -> Path:
     path = user_data_dir() / "history"
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def bars_cache_dir() -> Path:
+    """Local 5-min bar cache. Accumulates over time so users can backtest
+    further back than Yahoo's ~60-day 5-minute limit."""
+    path = user_data_dir() / "bars_cache"
+    path.mkdir(parents=True, exist_ok=True)
+    return path

@@ -153,6 +153,74 @@ def extract_buyhold_trades(bars: pd.DataFrame) -> list[OvernightTrade]:
     return [_trade_from_points(trading_days[0], trading_days[-1], open_point, close_point)]
 
 
+def extract_overnight_daily_trades(bars: pd.DataFrame) -> list[OvernightTrade]:
+    """
+    Overnight trades from daily bars (fallback when 5-minute data is unavailable).
+
+    Buy = day T Close (regular-session close proxy), sell = day T+1 Open (09:30
+    proxy for 09:29 pre-open). Same compounding model as the 5-minute overnight
+    path, but each trade is labeled with ``daily_close`` / ``daily_open`` sources
+    so the UI can mark results as "Approximatif".
+    """
+    bars = normalize_bars(bars)
+    if bars.empty:
+        return []
+    all_days = all_days_in_data(bars)
+    if len(all_days) < 2:
+        return []
+
+    trades: list[OvernightTrade] = []
+    for i in range(len(all_days) - 1):
+        buy_day = all_days[i]
+        sell_day = all_days[i + 1]
+        buy_bars = _day_slice(bars, buy_day)
+        sell_bars = _day_slice(bars, sell_day)
+        if buy_bars.empty or sell_bars.empty:
+            continue
+        buy_close = float(buy_bars["Close"].iloc[-1])
+        sell_open = float(sell_bars["Open"].iloc[0])
+        if buy_close <= 0 or sell_open <= 0:
+            continue
+        trades.append(
+            OvernightTrade(
+                buy_date=buy_day,
+                sell_date=sell_day,
+                buy_price=buy_close,
+                sell_price=sell_open,
+                buy_bar_time=str(buy_day),
+                sell_bar_time=str(sell_day),
+                buy_price_source="daily_close",
+                sell_price_source="daily_open",
+            )
+        )
+    return trades
+
+
+def backtest_overnight_daily_windowed(
+    bars: pd.DataFrame,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    max_trades: Optional[int] = None,
+    min_trades: int = 1,
+    starting_capital: float = DEFAULT_STARTING_CAPITAL,
+) -> Optional[BacktestResult]:
+    """Backtest the overnight strategy on daily-bar fallback data."""
+    all_trades = extract_overnight_daily_trades(bars)
+    if not all_trades:
+        return None
+    if start_date is not None:
+        all_trades = [t for t in all_trades if t.buy_date >= start_date]
+    if end_date is not None:
+        all_trades = [t for t in all_trades if t.buy_date <= end_date]
+    if not all_trades:
+        return None
+    if max_trades is not None and len(all_trades) > max_trades:
+        all_trades = all_trades[-max_trades:]
+    if len(all_trades) < min_trades:
+        return None
+    return _summarize_trades(all_trades, starting_capital)
+
+
 def backtest_overnight(
     bars: pd.DataFrame,
     hold_count: int,
@@ -368,12 +436,95 @@ def backtest_buyhold_windowed(
     return _summarize_trades(trades, starting_capital)
 
 
+def _daily_intraday(
+    bars: pd.DataFrame,
+    start_date: Optional[date],
+    end_date: Optional[date],
+    max_trades: Optional[int],
+    starting_capital: float,
+) -> Optional[BacktestResult]:
+    """Intraday (open->close) on daily bars: one trade per trading day."""
+    bars = normalize_bars(bars)
+    if bars.empty:
+        return None
+    days = all_days_in_data(bars)
+    trades: list[OvernightTrade] = []
+    for d in days:
+        day_bars = _day_slice(bars, d)
+        if day_bars.empty:
+            continue
+        open_p = float(day_bars["Open"].iloc[0])
+        close_p = float(day_bars["Close"].iloc[-1])
+        if open_p <= 0 or close_p <= 0:
+            continue
+        trades.append(
+            OvernightTrade(
+                buy_date=d,
+                sell_date=d,
+                buy_price=open_p,
+                sell_price=close_p,
+                buy_bar_time=str(d),
+                sell_bar_time=str(d),
+                buy_price_source="daily_open",
+                sell_price_source="daily_close",
+            )
+        )
+    if not trades:
+        return None
+    if start_date is not None:
+        trades = [t for t in trades if t.buy_date >= start_date]
+    if end_date is not None:
+        trades = [t for t in trades if t.buy_date <= end_date]
+    if not trades:
+        return None
+    if max_trades is not None and len(trades) > max_trades:
+        trades = trades[-max_trades:]
+    return _summarize_trades(trades, starting_capital)
+
+
+def _daily_buyhold(
+    bars: pd.DataFrame,
+    start_date: Optional[date],
+    end_date: Optional[date],
+    starting_capital: float,
+) -> Optional[BacktestResult]:
+    """Buy & Hold on daily bars: open of first day -> close of last day."""
+    bars = normalize_bars(bars)
+    days = all_days_in_data(bars)
+    if start_date is not None:
+        days = [d for d in days if d >= start_date]
+    if end_date is not None:
+        days = [d for d in days if d <= end_date]
+    if len(days) < 2:
+        return None
+    first = _day_slice(bars, days[0])
+    last = _day_slice(bars, days[-1])
+    if first.empty or last.empty:
+        return None
+    open_p = float(first["Open"].iloc[0])
+    close_p = float(last["Close"].iloc[-1])
+    if open_p <= 0 or close_p <= 0:
+        return None
+    trade = OvernightTrade(
+        buy_date=days[0],
+        sell_date=days[-1],
+        buy_price=open_p,
+        sell_price=close_p,
+        buy_bar_time=str(days[0]),
+        sell_bar_time=str(days[-1]),
+        buy_price_source="daily_open",
+        sell_price_source="daily_close",
+    )
+    return _summarize_trades([trade], starting_capital)
+
+
 def compare_strategies(
     bars: pd.DataFrame,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
     max_trades: Optional[int] = None,
     starting_capital: float = DEFAULT_STARTING_CAPITAL,
+    source: str = "5m_precise",
 ) -> dict[str, Optional[BacktestResult]]:
     """
     Compute Overnight vs Intraday vs Buy & Hold for the same data window.
@@ -382,7 +533,26 @@ def compare_strategies(
     means the strategy had no usable trades in the window. All three share the
     same start/end bracket and, where applicable, the same ``max_trades`` so
     the numbers are directly comparable.
+
+    ``source`` selects the overnight extraction path:
+    - ``"5m_precise"`` (default): 16:00 close -> 09:29 pre-open from 5-minute bars.
+    - ``"daily_fallback"``: day-T close -> day-(T+1) open from daily bars
+      (approximation; intraday/buy&hold still use the same daily bars for
+      comparability).
     """
+    if source == "daily_fallback":
+        overnight = backtest_overnight_daily_windowed(
+            bars,
+            start_date=start_date,
+            end_date=end_date,
+            max_trades=max_trades,
+            min_trades=1,
+            starting_capital=starting_capital,
+        )
+        # Intraday and Buy&Hold on daily bars: a "day" holds open->close.
+        intraday = _daily_intraday(bars, start_date, end_date, max_trades, starting_capital)
+        buyhold = _daily_buyhold(bars, start_date, end_date, starting_capital)
+        return {"overnight": overnight, "intraday": intraday, "buyhold": buyhold}
     return {
         "overnight": backtest_overnight_windowed(
             bars,
