@@ -30,6 +30,14 @@ logger = logging.getLogger(__name__)
 # Yahoo caps 5-minute history at roughly this many calendar days.
 FIVE_MIN_MAX_CALENDAR_DAYS = 60
 
+# In-memory cache for the current session: (ticker, lookback_days) -> (bars, source).
+# This avoids re-downloading the same ticker within a single optimizer run when
+# multiple slots / panels ask for the same data. Thread-safe via a lock.
+import threading as _threading
+_mem_cache: dict[tuple[str, int], tuple[pd.DataFrame, str]] = {}
+_mem_cache_lock = _threading.Lock()
+_MEM_CACHE_MAX = 600  # ~600 tickers worth of 5-min bars fits comfortably in RAM
+
 
 def download_intraday_bars(
     ticker: str,
@@ -180,7 +188,15 @@ def download_intraday_cached(
     back to daily bars. The two data families (5-minute intraday vs daily
     OHLC) have different buy/sell conventions, so they are never mixed in a
     single result.
+
+    An in-memory cache (session-scoped) avoids re-downloading the same ticker
+    when multiple calls hit the same (ticker, lookback) within one run.
     """
+    cache_key = (ticker.upper(), lookback_days)
+    with _mem_cache_lock:
+        if cache_key in _mem_cache:
+            return _mem_cache[cache_key]
+
     cached = load_cached_bars(ticker)
     five_min_lookback = min(lookback_days, FIVE_MIN_MAX_CALENDAR_DAYS)
 
@@ -208,15 +224,37 @@ def download_intraday_cached(
     # days avoids a spurious fallback at Yahoo's day boundary.
     if merged is not None and not merged.empty:
         if _coverage_days(merged) >= max(0, lookback_days - 2):
-            return merged, "5m_precise"
+            result = (merged, "5m_precise")
+            _mem_cache_put(cache_key, result)
+            return result
         # 5-minute data exists but cannot cover the bracket: use daily bars
         # alone (do not mix with the 5-minute family inside one result).
         daily = download_daily_bars(ticker, max_retries=max_retries, retry_delay=retry_delay)
-        return normalize_bars(daily), "daily_fallback"
+        result = (normalize_bars(daily), "daily_fallback")
+        _mem_cache_put(cache_key, result)
+        return result
 
     # No 5-minute data at all: fall back to daily bars.
     daily = download_daily_bars(ticker, max_retries=max_retries, retry_delay=retry_delay)
-    return normalize_bars(daily), "daily_fallback"
+    result = (normalize_bars(daily), "daily_fallback")
+    _mem_cache_put(cache_key, result)
+    return result
+
+
+def _mem_cache_put(key: tuple, value: tuple) -> None:
+    """Store a result in the memory cache, evicting oldest if over limit."""
+    with _mem_cache_lock:
+        if len(_mem_cache) >= _MEM_CACHE_MAX:
+            # Evict ~10% of the oldest entries (dict preserves insertion order).
+            for k in list(_mem_cache.keys())[:_MEM_CACHE_MAX // 10]:
+                del _mem_cache[k]
+        _mem_cache[key] = value
+
+
+def clear_memory_cache() -> None:
+    """Clear the session-scoped memory cache (call between optimizer runs)."""
+    with _mem_cache_lock:
+        _mem_cache.clear()
 
 
 def normalize_bars(df: pd.DataFrame) -> pd.DataFrame:

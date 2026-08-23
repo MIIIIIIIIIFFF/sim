@@ -135,3 +135,62 @@ class TestCompareStrategiesDaily:
         # Buy & Hold: open day1 -> close day3
         assert out["buyhold"] is not None
         assert out["buyhold"].trade_count == 1
+
+
+class TestMemoryCache:
+    """Verify the in-memory session cache avoids redundant downloads."""
+
+    def test_memory_cache_returns_same_object(self, monkeypatch):
+        """A second call with the same key should not re-download."""
+        import overnight_edge.data as data
+        from overnight_edge.data import clear_memory_cache, download_intraday_cached
+
+        clear_memory_cache()
+
+        call_count = {"n": 0}
+
+        def fake_download_intraday_bars(ticker, lookback_days, **kw):
+            call_count["n"] += 1
+            return pd.DataFrame()
+
+        def fake_load_cached_bars(ticker):
+            return pd.DataFrame()
+
+        def fake_download_daily_bars(ticker, **kw):
+            return pd.DataFrame()
+
+        monkeypatch.setattr(data, "download_intraday_bars", fake_download_intraday_bars)
+        monkeypatch.setattr(data, "load_cached_bars", fake_load_cached_bars)
+        monkeypatch.setattr(data, "download_daily_bars", fake_download_daily_bars)
+
+        download_intraday_cached("AAPL", 30)
+        download_intraday_cached("AAPL", 30)
+
+        # The in-memory cache should have served the second call without
+        # re-downloading.
+        assert call_count["n"] == 1
+        clear_memory_cache()
+
+    def test_clear_memory_cache(self, monkeypatch):
+        """clear_memory_cache empties the cache so the next call re-downloads."""
+        import overnight_edge.data as data
+        from overnight_edge.data import clear_memory_cache, download_intraday_cached
+
+        clear_memory_cache()
+
+        call_count = {"n": 0}
+
+        def fake_download_intraday_bars(ticker, lookback_days, **kw):
+            call_count["n"] += 1
+            return pd.DataFrame()
+
+        monkeypatch.setattr(data, "download_intraday_bars", fake_download_intraday_bars)
+        monkeypatch.setattr(data, "load_cached_bars", lambda t: pd.DataFrame())
+        monkeypatch.setattr(data, "download_daily_bars", lambda t, **kw: pd.DataFrame())
+
+        download_intraday_cached("MSFT", 30)
+        clear_memory_cache()
+        download_intraday_cached("MSFT", 30)
+
+        assert call_count["n"] == 2
+        clear_memory_cache()

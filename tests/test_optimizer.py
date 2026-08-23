@@ -139,13 +139,14 @@ def test_analyze_ticker_picks_best(monkeypatch, capsys):
     """_analyze_ticker returns the best slot for a single ticker (network patched)."""
     from datetime import timedelta
     import overnight_edge.data as data
-    from overnight_edge.optimizer_panel import OptimizerPanel
+    from overnight_edge.optimizer_panel import OptimizerPanel, MODE_BOTH
 
     bars = _bars()
     monkeypatch.setattr(data, "download_intraday_cached", lambda ticker, lookback: (bars, "5m_precise"))
 
     panel = OptimizerPanel.__new__(OptimizerPanel)  # avoid Tk construction; pure method
-    pt, slots = panel._analyze_ticker("TEST", date(2025, 1, 1), date(2025, 1, 31))
+    pt, slots = panel._analyze_ticker("TEST", date(2025, 1, 1), date(2025, 1, 31),
+                                       crossover=False, mode=MODE_BOTH)
 
     assert pt["ticker"] == "TEST"
     assert pt["family"] in ("day", "night")

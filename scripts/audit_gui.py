@@ -94,14 +94,14 @@ def main() -> int:
                 {"ticker": "AAPL", "family": "Nuit", "slot": "NUIT 16:00→09:10",
                  "compounded": 8.2, "win": 55.0},
             ]
-            panel._render_slots(sample_rows, sample_detail, 30)
-            assert panel.slots_tree.get_children(), "optimizer slots empty"
+            panel._render_results(sample_rows, sample_detail, 30)
             assert panel.day_circle.canvas.find_all(), "day circle empty"
             assert panel.night_circle.canvas.find_all(), "night circle empty"
+            assert panel.detail_tree.get_children(), "detail tree empty"
 
             print("GUI smoke OK: rows", len(app.tree.get_children()),
                   "strategy rows", initial_rows, "tags", tags,
-                  "optimizer_slots", len(panel.slots_tree.get_children()))
+                  "detail_rows", len(panel.detail_tree.get_children()))
             return 0
     finally:
         H.history_dir = old_history_dir
