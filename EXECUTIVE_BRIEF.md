@@ -62,7 +62,7 @@ sur toute la liste.
 Option **Croiser les cercles** : autorise les familles à empiéter sur les
 heures étendues de l'autre — le Jour peut aussi acheter pré-marché / vendre
 after-marché, et la Nuit peut aussi acheter avant la clôture / vendre après
-l'ouverture — et superpose visuellement les deux cercles (arcs pointillés).
+l'ouverture. Les cercles restent côte à côte (option logique, pas visuelle).
 
 ## Timing
 

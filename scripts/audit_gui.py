@@ -99,13 +99,6 @@ def main() -> int:
             assert panel.day_circle.canvas.find_all(), "day circle empty"
             assert panel.night_circle.canvas.find_all(), "night circle empty"
 
-            # Exercise the crossover overlay render (circles offset + dashed).
-            panel._crossover = True
-            panel._render_slots(sample_rows, sample_detail, 30), "optimizer slots empty"
-            assert panel.day_circle.canvas.find_all(), "day(cross) circle empty"
-            assert panel.night_circle.canvas.find_all(), "night(cross) circle empty"
-            panel._crossover = False
-
             print("GUI smoke OK: rows", len(app.tree.get_children()),
                   "strategy rows", initial_rows, "tags", tags,
                   "optimizer_slots", len(panel.slots_tree.get_children()))

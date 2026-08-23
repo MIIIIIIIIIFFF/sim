@@ -17,6 +17,7 @@ window object to read shared settings such as the starting capital.
 
 from __future__ import annotations
 
+import math
 import threading
 from datetime import date, timedelta
 from tkinter import StringVar, ttk
@@ -64,7 +65,13 @@ def _tip(widget, text: str) -> None:
 
 
 class _Circle:
-    """A Canvas circle that draws day-by-day segments (profit / zero / loss)."""
+    """A Canvas circle built from animated dots — one dot per cycle (trade).
+
+    Each dot represents one evaluated cycle: green = profit, red = loss,
+    gray = zero. Dots appear one-by-one around the ring, animating the circle
+    into existence as cycles accumulate. The net compounded return is shown
+    at the center.
+    """
 
     def __init__(self, parent, title: str, color: str) -> None:
         from tkinter import Canvas, LabelFrame
@@ -72,48 +79,88 @@ class _Circle:
         self.color = color
         self.box = LabelFrame(parent, text=title, font=(FONT_FAMILY, 10))
         self.box.pack(side="left", fill="both", expand=True, padx=6, pady=4)
-        self.canvas = Canvas(self.box, width=150, height=150, bg="#0f172a", highlightthickness=0)
+        self.canvas = Canvas(self.box, width=160, height=160, bg="#0f172a", highlightthickness=0)
         self.canvas.pack(fill="both", expand=True)
+        self._anim_id: str | None = None
+        self._dots: list[tuple[str, float]] = []
+        self._shown: int = 0
 
     def set_segments(self, segments: list[tuple[str, float]], offset=(0, 0), dash=None) -> None:
-        """segments: list of (kind, magnitude) where kind is profit/zero/loss.
+        """Set the cycle list and begin the dot-by-dot build animation.
 
-        Draws a compact arc spray colored by sign and labels the net value.
-        ``offset`` shifts the circle center (used to visually cross/overlay the
-        two circles); ``dash`` makes the arcs dashed (used on the overlay layer).
+        ``offset`` and ``dash`` are accepted for API compatibility but ignored
+        — the crossover option is a logic toggle, not a visual one, so both
+        circles always render side-by-side as solid dot rings.
         """
+        # Cancel any pending animation frame.
+        if self._anim_id is not None:
+            try:
+                self.canvas.after_cancel(self._anim_id)
+            except Exception:  # noqa: BLE001
+                pass
+            self._anim_id = None
+
+        self._dots = list(segments or [])
+        self._shown = 0
         self.canvas.delete("all")
-        w = self.canvas.winfo_width() or 150
-        h = self.canvas.winfo_height() or 150
-        cx = w / 2 + offset[0]
-        cy = h / 2 + offset[1]
-        r_out = min(w, h) / 2 - 8
-        r_in = r_out - 18
+        self._draw_frame()
+        self._schedule_next()
 
+    def _draw_frame(self) -> None:
+        """Draw the static center label (updated as dots appear)."""
+        # Center text is redrawn each tick; nothing static needed here.
+        pass
+
+    def _schedule_next(self) -> None:
+        """Reveal the next dot, then schedule the following tick."""
+        if self._shown >= len(self._dots):
+            self._draw_center()
+            self._anim_id = None
+            return
+        self._reveal_dot(self._shown)
+        self._shown += 1
+        self._draw_center()
+        # Pace: ~25ms per dot, but cap total animation at ~1.2s.
+        delay = max(8, min(25, 1200 // max(len(self._dots), 1)))
+        self._anim_id = self.canvas.after(delay, self._schedule_next)
+
+    def _reveal_dot(self, index: int) -> None:
+        """Draw a single dot on the ring at the angle for its index."""
+        w = self.canvas.winfo_width() or 160
+        h = self.canvas.winfo_height() or 160
+        cx, cy = w / 2, h / 2
+        radius = min(w, h) / 2 - 14
+        n = max(len(self._dots), 1)
+        # Distribute dots evenly around the full circle, starting at top.
+        angle = (index / n) * 2 * math.pi - math.pi / 2
+        x = cx + radius * math.cos(angle)
+        y = cy + radius * math.sin(angle)
+
+        kind, value = self._dots[index]
         colors = {"profit": "#22c55e", "zero": "#64748b", "loss": "#ef4444"}
-        data = list(segments or [])
-        total_abs = sum(abs(v) for _, v in data) or 1.0
+        fill = colors.get(kind, "#64748b")
+        # Dot size scales slightly with magnitude (clamped).
+        mag = abs(value)
+        sz = max(3.0, min(7.0, 3.0 + math.log1p(max(mag, 0)) * 0.8))
+        self.canvas.create_oval(x - sz, y - sz, x + sz, y + sz, fill=fill, outline="")
 
-        # Segments: weight each slice by its magnitude, colored by sign.
-        start = 90.0
-        usable = 300.0  # leave a gap so the ring reads as a "dial"
-        gap = usable / max(len(data), 1)
-        for kind, value in segments:
-            span = (abs(value) / total_abs) * usable
-            self.canvas.create_arc(
-                cx - r_out, cy - r_out, cx + r_out, cy + r_out,
-                start=start, extent=span,
-                style="arc", outline=colors.get(kind, "#64748b"), width=6,
-                dash=dash,
-            )
-            start += span + gap * 0.4
-
-        # Center: net compounded + day count
-        net = sum(v for _, v in segments)
+    def _draw_center(self) -> None:
+        """Draw / refresh the center label with net compounded + cycle count."""
+        self.canvas.delete("center")
+        w = self.canvas.winfo_width() or 160
+        h = self.canvas.winfo_height() or 160
+        cx, cy = w / 2, h / 2
+        net = sum(v for _, v in self._dots)
+        total = len(self._dots)
+        shown = self._shown
         self.canvas.create_text(
-            cx, cy - 6, text=f"{net:+.1f}%", fill="#e2e8f0", font=(FONT_FAMILY, 12, "bold")
+            cx, cy - 6, text=f"{net:+.1f}%", fill="#e2e8f0",
+            font=(FONT_FAMILY, 13, "bold"), tags="center",
         )
-        self.canvas.create_text(cx, cy + 16, text=f"{len(data)} segments", fill="#94a3b8", font=(FONT_FAMILY, 8))
+        self.canvas.create_text(
+            cx, cy + 14, text=f"{shown}/{total} cycles", fill="#94a3b8",
+            font=(FONT_FAMILY, 8), tags="center",
+        )
 
 
 class OptimizerPanel:
@@ -471,19 +518,13 @@ class OptimizerPanel:
                 tags=(tag,),
             )
 
-        # Circles show the day-by-day outcome polarity of the best slot per family.
+        # Circles show the cycle-by-cycle outcome polarity of the best slot per family.
+        # Each dot = one trade; green = profit, red = loss, gray = zero. Dots
+        # animate in one-by-one to build the circle.
         best_day = next((r for r in rows if r["family"] == "Jour"), None)
         best_night = next((r for r in rows if r["family"] == "Nuit"), None)
-        cross = bool(getattr(self, "_crossover", False))
-        if cross:
-            # Overlay ("crossing") mode: shift the two circles toward each other
-            # and make the night arcs dashed so the overlapping rings read as two
-            # intertwined families sharing territory.
-            self.day_circle.set_segments(self._trade_segments(best_day), offset=(-10, 0))
-            self.night_circle.set_segments(self._trade_segments(best_night), offset=(10, 0), dash=(4, 3))
-        else:
-            self.day_circle.set_segments(self._trade_segments(best_day))
-            self.night_circle.set_segments(self._trade_segments(best_night))
+        self.day_circle.set_segments(self._trade_segments(best_day))
+        self.night_circle.set_segments(self._trade_segments(best_night))
 
         det = self.detail_tree
         for item in det.get_children():

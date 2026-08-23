@@ -146,9 +146,8 @@ after-hours (16:00 → 16:30) et ne vendent qu'en pré-ouverture (09:00 → 09:2
 **Option « Croiser les cercles »** : en passant sur `Oui`, on autorise chaque
 famille à empiéter sur les heures étendues de l'autre (Jour achète aussi
 pré-marché / vend après-marché ; Nuit achète aussi avant la clôture / vend
-après l'ouverture). Les deux cercles se **superposent** visuellement (arcs
-pointillés) pour matérialiser le croisement, et le répertoire de créneaux
-passe à 110 par famille.
+après l'ouverture). Le répertoire de créneaux passe à 110 par famille. Les
+cercles restent côte à côte — l'option agit sur la **logique** de recherche.
 
 Les favoris sont sauvegardés sur disque (`%APPDATA%\OvernightEdge\optimizer_favorites.json`)
 et retrouvés au prochain lancement.
