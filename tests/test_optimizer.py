@@ -240,3 +240,43 @@ def test_cross_rings_renders_dots_and_tip():
         assert len(rings.night._points) == 2
     finally:
         root.destroy()
+
+
+def test_detail_sort_nan_always_sinks():
+    """Failed tickers (—/NaN) stay at the bottom in both asc and desc sorts."""
+    import tkinter as tk
+    from tkinter import ttk
+
+    from overnight_edge.optimizer_panel import OptimizerPanel
+
+    try:
+        root = tk.Tk()
+    except Exception:  # noqa: BLE001
+        pytest.skip("Tkinter display not available")
+    root.withdraw()
+    try:
+        nb = ttk.Notebook(root)
+        opt_page = ttk.Frame(nb)
+        nb.add(opt_page)
+        p = OptimizerPanel(parent=opt_page, root=root, universe_df=None, app=None)
+        root.update_idletasks()
+
+        det = p.detail_tree
+        # Simulate 4 rows incl. one failed ticker (NaN -> "—").
+        for ticker, comp in [("NVDA", "+12.50%"), ("AAPL", "-3.20%"),
+                             ("JPM", "+0.00%"), ("FAIL", "—")]:
+            det.insert("", "end", values=(ticker, "Jour", "—", comp, "—"))
+
+        # Sort ascending by compounded: -3.20, 0.00, +12.50, then NaN at bottom.
+        p._detail_sort = ("compounded", False)
+        p._resort_detail()
+        order = [det.set(i)["ticker"] for i in det.get_children()]
+        assert order == ["AAPL", "JPM", "NVDA", "FAIL"], f"asc: {order}"
+
+        # Sort descending: +12.50, 0.00, -3.20, then NaN STILL at bottom.
+        p._detail_sort = ("compounded", True)
+        p._resort_detail()
+        order = [det.set(i)["ticker"] for i in det.get_children()]
+        assert order == ["NVDA", "JPM", "AAPL", "FAIL"], f"desc: {order}"
+    finally:
+        root.destroy()

@@ -408,11 +408,16 @@ class OptimizerPanel:
         self._resort_detail()
 
     def _resort_detail(self) -> None:
-        """Reorder existing detail rows by the current sort column/direction."""
+        """Reorder existing detail rows by the current sort column/direction.
+
+        Failed tickers (compounded = NaN, shown as '—') always sink to the
+        bottom regardless of sort direction.
+        """
         col, desc = self._detail_sort
         det = self.detail_tree
         items = det.get_children()
-        keyed = []
+        nan_rows: list = []
+        val_rows: list = []
         for item in items:
             vals = det.set(item)
             raw = vals.get(col, "")
@@ -420,12 +425,14 @@ class OptimizerPanel:
                 key = float(raw.rstrip("%").replace("—", "nan") or "nan")
             except ValueError:
                 key = raw
-            keyed.append((key, item))
-        # NaNs (failed tickers) always sink to the bottom regardless of direction.
-        keyed.sort(key=lambda kv: (1 if isinstance(kv[0], float) and kv[0] != kv[0] else 0,
-                                   kv[0]),
-                   reverse=desc)
-        for _, item in keyed:
+            if isinstance(key, float) and key != key:  # NaN
+                nan_rows.append(item)
+            else:
+                val_rows.append((key, item))
+        val_rows.sort(key=lambda kv: kv[0], reverse=desc)
+        for _, item in val_rows:
+            det.move(item, "", "end")
+        for item in nan_rows:
             det.move(item, "", "end")
 
     # ------------------------------------------------------------------
