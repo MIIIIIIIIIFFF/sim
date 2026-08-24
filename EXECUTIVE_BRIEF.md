@@ -38,7 +38,7 @@ dans TradingView (**Paste symbols**). Gain de temps quotidien immédiat.
 ## Historique long (accumulation + repli)
 
 Yahoo limite les barres 5 minutes à ~60 jours. Pour les périodes plus longues :
-accumulation locale des barres 5 min dans `%APPDATA%\OvernightEdge\bars_cache`
+accumulation locale des barres 5 min dans `<dossier d'installation>\bars_cache`
 (précis, grandit chaque jour) + repli automatique sur barres quotidiennes
 (~10 ans, marqué « Approximatif »). Permet des backtests sur plusieurs mois ou
 années dans l'onglet « Analyse d'une valeur ».
@@ -52,17 +52,16 @@ le S&P 500, en comparant deux familles :
 - **Nuit** : achat after-hours 16:00→16:30, vente pré-ouverture 09:00→09:25 (30 combos)
 
 Chaque créneau est classé par **rendement composé**. Deux **cercles animés**
-montrent en temps réel la répartition des jours profit / zéro / perte du
-meilleur créneau de chaque famille. Univers au choix : S&P 500 complet, un
-favori sauvegardé sur disque, ou un ticker libre ajouté à la volée. Plage de
-dates 0–30 jours, jusqu'à ~60 jours en arrière (5 min précis). Résultats par
-créneau et par titre ; optimisation simultanée **jour et nuit**, par stock ou
-sur toute la liste.
-
-Option **Croiser les cercles** : autorise les familles à empiéter sur les
-heures étendues de l'autre — le Jour peut aussi acheter pré-marché / vendre
-after-marché, et la Nuit peut aussi acheter avant la clôture / vendre après
-l'ouverture. Les cercles restent côte à côte (option logique, pas visuelle).
+montrent le **rendement par titre** : un point par ticker, **vert** = gain,
+**rouge** = perte, **gris** ~zéro (rafraîchis ~1×/seconde pendant l'analyse,
+animation des points une seule fois à la fin, fixes après). Univers au choix :
+S&P 500 complet, un favori sauvegardé sur disque, ou un ticker libre ajouté à
+la volée. Plage de dates 0–30 jours,
+jusqu'à ~60 jours en arrière (5 min précis). Résultats par créneau et par
+titre ; le **tableau de détail est triable** par colonne (clic d'en-tête,
+sens conservé pendant l'optimisation). Optimisation simultanée **jour et
+nuit**, par stock ou sur toute la liste. L'onglet est en deux sous-pages :
+**① Listes de titres** (édition, pleine hauteur) et **② Optimiser**.
 
 ## Timing
 

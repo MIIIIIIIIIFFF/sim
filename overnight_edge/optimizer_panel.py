@@ -16,6 +16,7 @@ from __future__ import annotations
 import math
 import os
 import threading
+import time
 from datetime import date, timedelta
 from tkinter import StringVar, Tk, messagebox, ttk
 
@@ -24,6 +25,8 @@ from overnight_edge.optimizer import evaluate_all_slots, load_favorites, save_fa
 FONT_FAMILY = "Segoe UI"
 DAY_COLOR = "#2e86c1"
 NIGHT_COLOR = "#8e44ad"
+
+_SEGMENT_COLORS = {"profit": "#22c55e", "zero": "#94a3b8", "loss": "#ef4444"}
 
 # Optimization modes.
 MODE_DAY = "Jour seulement"
@@ -68,228 +71,159 @@ def _tip(widget, text: str) -> None:
 
 
 class _CrossRings:
-    """One interactive Canvas holding two overlapping rings (day + night).
+    """Two separate scatter-plot circles (day on the left, night on the right).
 
-    Concept:
-    - The two rings sit side by side and *cross* in the middle — that crossing
-      zone is where the two families interleave (day-purchase vs night-sell,
-      and the reverse on the far side).
-    - Each ring is a distribution of dots, one per cycle (trade): green =
-      profit, red = loss, gray = zero. Dot size scales with magnitude.
-    - The *far ends* of each ring are labeled ACHAT (buy) on one side and
-      VENTE (sell) on the other — the same two ends, opposed between families.
-    - Dots pop in one-by-one while the optimizer works, and hovering a dot
-      reveals its exact return. The crossing zone is highlighted (pulses) when
-      the Croisés (crossed) mode is active.
+    Each circle is a dot per ticker in that family:
+    - green dots above zero (positive compounded return),
+    - red dots below zero (negative compounded return),
+    - gray dots near zero,
+    - dot size scales with the magnitude of the return,
+    - the zero line is drawn as a faint horizontal diameter so the green/red
+      split reads at a glance; the center shows the family's average return.
     """
 
     def __init__(self, parent, color_day: str, color_night: str) -> None:
-        from tkinter import Canvas, LabelFrame
+        from tkinter import Frame, LabelFrame
 
-        self.color_day = day_color = color_day
-        self.color_night = night_color = color_night
-        self.box = LabelFrame(parent, text="Interleaving jour / nuit", font=(FONT_FAMILY, 10))
+        self.color_day = color_day
+        self.color_night = color_night
+        self.box = LabelFrame(parent, text="Rendement par titre (jour / nuit)",
+                              font=(FONT_FAMILY, 10))
         self.box.pack(fill="x", expand=True, padx=6, pady=4)
-        self.canvas = Canvas(self.box, width=380, height=200, bg="#0f172a", highlightthickness=0)
-        self.canvas.pack(fill="both", expand=True)
 
-        self._day_dots: list[tuple[int, tuple[str, float]]] = []   # (canvas_id, (kind, value))
-        self._night_dots: list[tuple[int, tuple[str, float]]] = []
-        self._anim_jobs: list[str] = []
+        self.frame = Frame(self.box)
+        self.frame.pack(fill="both", expand=True)
+
+        self.day = self._Scatter(self.frame, "Jour", color_day)
+        self.night = self._Scatter(self.frame, "Nuit", color_night)
+
         self._crossover = False
-        self._tip_id: int | None = None
 
-        # Geometry.
-        self._day_center = (130, 100)
-        self._night_center = (250, 100)
-        self._radius = 78
-        self._label_buf = (2, 52)
+    class _Scatter:
+        """A scatter circle: one dot per ticker, placed around the circle."""
 
-        self.canvas.bind("<Motion>", self._on_motion)
+        def __init__(self, parent, title: str, accent: str) -> None:
+            from tkinter import Canvas, Frame, Label
 
-    # ------------------------------------------------------------------
-    def set_rings(self, day_segments, night_segments, crossover=False) -> None:
-        """Redraw both rings from cycles + crossover highlight. ``offset/dash``
-        are accepted for API compatibility and ignored."""
-        self._crossover = crossover
-        for job in self._anim_jobs:
-            try:
-                self.canvas.after_cancel(job)
-            except Exception:  # noqa: BLE001
-                pass
-        self._anim_jobs.clear()
-        self.canvas.delete("all")
-        self._day_dots.clear()
-        self._night_dots.clear()
-        self._draw_geometry()
-        self._draw_ring(self._day_center, self._radius, day_segments or [],
-                        self._day_dots, "day")
-        self._draw_ring(self._night_center, self._radius, night_segments or [],
-                        self._night_dots, "night")
-        self._schedule_popins()
+            self.accent = accent
+            holder = Frame(parent)
+            holder.pack(side="left", fill="both", expand=True, padx=6, pady=4)
+            Label(holder, text=title, font=(FONT_FAMILY, 11, "bold"),
+                  fg="#e2e8f0", bg="#0f172a").pack()
+            self.canvas = Canvas(holder, width=220, height=220, bg="#0f172a",
+                                 highlightthickness=0)
+            self.canvas.pack(fill="both", expand=True, padx=4, pady=4)
 
-    # ------------------------------------------------------------------
-    def _draw_geometry(self) -> None:
-        """Draw the static ring outlines, crossing highlight and the
-        ACHAT / VENTE end labels."""
-        (dx, dy) = self._day_center
-        (nx, ny) = self._night_center
-        r = self._radius
+            self._points: list[tuple[str, float]] = []   # (ticker, return%)
+            self._shown = 0
+            self._anim_id: str | None = None
 
-        # Ring outlines.
-        self.canvas.create_oval(dx - r, dy - r, dx + r, dy + r, outline=self.color_day,
-                                width=2, tags="ring")
-        self.canvas.create_oval(nx - r, ny - r, nx + r, ny + r, outline=self.color_night,
-                                width=2, tags="ring")
+        def set_data(self, points, _label: str = "", animate: bool = True) -> None:
+            """Set the scatter for this family.
 
-        # Crossing (overlap) lens — highlight the shared middle zone.
-        # When crossover is ON, this zone glows amber (the families interleave);
-        # otherwise it is muted so the two families are clearly separate.
-        inter_l = max(dx - r, nx - r)
-        inter_r = min(dx + r, nx + r)
-        inter_t = max(dy - r, ny - r)
-        inter_b = min(dy + r, ny + r)
-        if inter_l < inter_r:
-            fill = "#f59e0b" if self._crossover else "#1e293b"
-            self.canvas.create_rectangle(
-                inter_l, inter_t, inter_r, inter_b,
-                fill=fill, stipple="gray25", outline="", tags="cross",
-            )
-
-        # ACHAT / VENTE end labels. Far ends:
-        # day ring: ACHAT on the left, VENTE on the right.
-        left_x = dx - r - 8
-        right_x = dx + r + 8
-        self.canvas.create_text(
-            left_x, dy - 16, text="ACHAT", fill="#e2e8f0",
-            font=(FONT_FAMILY, 8, "bold"), anchor="e", tags="label",
-        )
-        self.canvas.create_text(
-            left_x, dy + 12, text="jour", fill=self.color_day,
-            font=(FONT_FAMILY, 7), anchor="e", tags="label",
-        )
-        self.canvas.create_text(
-            right_x, dy - 16, text="VENTE", fill="#e2e8f0",
-            font=(FONT_FAMILY, 8, "bold"), anchor="w", tags="label",
-        )
-        self.canvas.create_text(
-            right_x, dy + 12, text="jour", fill=self.color_day,
-            font=(FONT_FAMILY, 7), anchor="w", tags="label",
-        )
-        # night ring: VENTE on the left, ACHAT on the right (opposed).
-        n_left = nx - r - 8
-        n_right = nx + r + 8
-        self.canvas.create_text(
-            n_left, ny - 16, text="VENTE", fill="#e2e8f0",
-            font=(FONT_FAMILY, 8, "bold"), anchor="e", tags="label",
-        )
-        self.canvas.create_text(
-            n_left, ny + 12, text="nuit", fill=self.color_night,
-            font=(FONT_FAMILY, 7), anchor="e", tags="label",
-        )
-        self.canvas.create_text(
-            n_right, ny - 16, text="ACHAT", fill="#e2e8f0",
-            font=(FONT_FAMILY, 8, "bold"), anchor="e", tags="label",
-        )
-        self.canvas.create_text(
-            n_right, ny + 12, text="nuit", fill=self.color_night,
-            font=(FONT_FAMILY, 7), anchor="e", tags="label",
-        )
-
-        # Center net labels.
-        self.canvas.create_text(
-            dx, dy - 4, text="—", fill="#94a3b8", font=(FONT_FAMILY, 9), tags="center",
-        )
-        self.canvas.create_text(
-            nx, ny - 4, text="—", fill="#94a3b8", font=(FONT_FAMILY, 9), tags="center",
-        )
-
-    # ------------------------------------------------------------------
-    def _draw_ring(self, center, radius, segments, dest, family) -> None:
-        """Draw a ring of dots for one family. Dot color = profit/loss sign."""
-        cx, cy = center
-        n = max(len(segments), 1)
-        for i, (kind, value) in enumerate(segments):
-            # Distribute dots around the circle.
-            angle = (i / n) * 2 * math.pi - math.pi / 2
-            x = cx + radius * math.cos(angle)
-            y = cy + radius * math.sin(angle)
-            colors = {"profit": "#22c55e", "zero": "#94a3b8", "loss": "#ef4444"}
-            fill = colors.get(kind, "#94a3b8")
-            mag = abs(value)
-            base = 5.0 if family == "day" else 5.0
-            sz = max(2.5, min(6.5, base + math.log1p(max(mag, 0)) * 0.7))
-            outline = self.color_day if family == "day" else self.color_night
-            cid = self.canvas.create_oval(
-                x - sz, y - sz, x + sz, y + sz,
-                fill=fill, outline=outline, width=1, tags="dot",
-            )
-            if family == "day":
-                self._day_dots.append((cid, (kind, value)))
+            ``points`` is a list of ``(ticker, return_pct)``; ``animate`` reveals
+            the dots one-by-one (final render) vs all at once (live optimization).
+            """
+            if self._anim_id is not None:
+                try:
+                    self.canvas.after_cancel(self._anim_id)
+                except Exception:  # noqa: BLE001
+                    pass
+                self._anim_id = None
+            self._points = list(points or [])
+            self.canvas.delete("all")
+            if animate:
+                self._shown = 0
+                self._draw()
             else:
-                self._night_dots.append((cid, (kind, value)))
+                self._shown = len(self._points)
+                self._draw(static=True)
+
+        def _draw(self, static: bool = False) -> None:
+            """Draw the zero-line circle + the dots revealed so far."""
+            self.canvas.delete("all")
+            w = self.canvas.winfo_width() or 220
+            h = self.canvas.winfo_height() or 220
+            cx, cy = w / 2, h / 2
+            r = min(w, h) / 2 - 16
+            # Outline + zero baseline (faint horizontal diameter).
+            self.canvas.create_oval(cx - r, cy - r, cx + r, cy + r,
+                                    outline=self.accent, width=2)
+            self.canvas.create_line(cx - r, cy, cx + r, cy, fill="#334155",
+                                    width=1, dash=(3, 3))
+
+            pts = self._points[: self._shown]
+            if pts:
+                max_abs = max((abs(v) for _, v in pts), default=1.0) or 1.0
+                n = len(self._points)
+                for i, (ticker, value) in enumerate(pts):
+                    # Place around the circle, evenly spaced.
+                    angle = (i / n) * 2 * 3.141592653589793
+                    # Radial offset proportional to |return| (further from zero
+                    # line = bigger |return|), clamped inside the disk.
+                    frac = 0.25 + 0.7 * (abs(value) / max_abs)
+                    px = cx + r * frac * math.cos(angle)
+                    py = cy - (r * frac * (1 if value >= 0 else -1)) * math.sin(angle) * 0.6
+                    if abs(value) < 1e-9:
+                        fill = "#94a3b8"
+                    elif value > 0:
+                        fill = "#22c55e"
+                    else:
+                        fill = "#ef4444"
+                    sz = 3 + 5 * (abs(value) / max_abs)
+                    self.canvas.create_oval(px - sz, py - sz, px + sz, py + sz,
+                                             fill=fill, outline="", tags="dot")
+
+            # Center: average return + count.
+            if pts:
+                avg = sum(v for _, v in pts) / len(pts)
+            else:
+                avg = 0.0
+            self.canvas.create_text(cx, cy - 6, text=f"{avg:+.1f}%",
+                                     fill="#f8fafc", font=(FONT_FAMILY, 14, "bold"))
+            self.canvas.create_text(cx, cy + 12, text=f"{len(pts)} titres",
+                                     fill="#94a3b8", font=(FONT_FAMILY, 8))
+
+            if not static and self._shown < len(self._points):
+                delay = max(6, min(25, 1200 // max(len(self._points), 1)))
+
+                def _step(_self=self) -> None:
+                    try:
+                        if not _self.canvas.winfo_exists():
+                            _self._anim_id = None
+                            return
+                        _self._shown += 1
+                        _self._draw()
+                        if _self._shown >= len(_self._points):
+                            _self._anim_id = None
+                    except Exception:  # noqa: BLE001
+                        _self._anim_id = None
+
+                self._anim_id = self.canvas.after(delay, _step)
+
+        def set_segments(self, segments, offset=(0, 0), dash=None) -> None:
+            self.set_data(segments, animate=False)
 
     # ------------------------------------------------------------------
-    def _schedule_popins(self) -> None:
-        """Animate dots scaling-in one-by-one over time (pulse)."""
-        dots = [cid for cid, _ in self._day_dots] + [cid for cid, _ in self._night_dots]
-        total = len(dots)
-        delay = max(6, min(28, 1400 // max(total, 1)))
-        self._pop_idx = 0
-        self._pop_total = total
+    def set_rings(self, day_points, night_points, crossover=False,
+                  day_label: str = "", night_label: str = "",
+                  animate: bool = True) -> None:
+        """Redraw both scatter circles from per-ticker return lists.
 
-        def _tick() -> None:
-            if self._pop_idx >= self._pop_total:
-                return
-            i = self._pop_idx
-            cid = dots[i]
-            # "Pulse": redraw this dot larger once then settle (simple flash).
-            coords = self.canvas.coords(cid)
-            if coords:
-                bx0, by0, bx1, by1 = coords
-                # Flash ring around the dot for emphasis.
-                self.canvas.create_oval(
-                    bx0 - 2, by0 - 2, bx1 + 2, by1 + 2,
-                    outline="#e2e8f0", width=1, tags="flash" + str(i),
-                )
-            self._pop_idx += 1
-            if self._pop_idx < self._pop_total:
-                self._anim_jobs.append(self.canvas.after(delay, _tick))
+        ``day_points``/``night_points`` are ``[(ticker, return_pct), ...]``.
+        ``crossover``/labels are accepted for API compatibility and ignored.
+        """
+        self._crossover = crossover
+        self.day.set_data(day_points or [], animate=animate)
+        self.night.set_data(night_points or [], animate=animate)
 
-        if total:
-            self._anim_jobs.append(self.canvas.after(0, _tick))
+    # Kept for API compatibility with audit/old callers.
+    @property
+    def canvas(self):
+        return self.day.canvas
 
-    # ------------------------------------------------------------------
-    def _on_motion(self, event) -> None:
-        """Hover a dot to reveal its return value in a floating tooltip."""
-        self.canvas.delete("tip")
-        closest = self.canvas.find_closest(event.x, event.y)
-        if not closest:
-            return
-        cid = closest[0]
-        found = None
-        for cid2, (kind, value) in self._day_dots:
-            if cid2 == cid:
-                found = ("Jour", kind, value)
-                break
-        if found is None:
-            for cid2, (kind, value) in self._night_dots:
-                if cid2 == cid:
-                    found = ("Nuit", kind, value)
-                    break
-        if found is None:
-            return
-        fam, kind, value = found
-        tx = event.x + 12
-        ty = event.y - 10
-        self.canvas.create_rectangle(
-            tx, ty, tx + 120, ty + 24, fill="#0b1220", outline="#334155", tags="tip",
-        )
-        self.canvas.create_text(
-            tx + 6, ty + 8,
-            text=f"{fam} : {value:+.2f}%",
-            fill="#e2e8f0", font=(FONT_FAMILY, 8), anchor="w", tags="tip",
-        )
+    def set_segments(self, day_segments, night_segments, offset=(0, 0), dash=None) -> None:
+        self.set_rings(day_segments, night_segments, crossover=self._crossover)
 
 
 class OptimizerPanel:
@@ -326,9 +260,20 @@ class OptimizerPanel:
     # ------------------------------------------------------------------
 
     def _build(self) -> None:
-        # ---- Section 1: List editor -----------------------------------
-        list_frame = ttk.LabelFrame(self.parent, text="①  Liste de titres")
-        list_frame.pack(fill="x", padx=6, pady=(6, 2))
+        # Split the optimizer tab into two sub-pages so the list editor no
+        # longer eats the circles' vertical space.
+        self._pages = ttk.Notebook(self.parent)
+        self._pages.pack(fill="both", expand=True, padx=6, pady=6)
+
+        list_page = ttk.Frame(self._pages)
+        opt_page = ttk.Frame(self._pages)
+        self._pages.add(list_page, text="①  Listes de titres")
+        self._pages.add(opt_page, text="②  Optimiser")
+        self._pages.bind("<<NotebookTabChanged>>", self._on_page_change)
+
+        # ---- Page 1: List editor (full height) ----------------------
+        list_frame = ttk.LabelFrame(list_page, text="Liste de titres")
+        list_frame.pack(fill="both", expand=True, padx=6, pady=(6, 2))
 
         list_top = ttk.Frame(list_frame)
         list_top.pack(fill="x", padx=8, pady=4)
@@ -346,23 +291,28 @@ class OptimizerPanel:
         _tip(list_top, "Créez, renommez ou supprimez vos listes de titres.\n« S&P 500 » charge les 500 plus grandes valeurs US.")
 
         list_mid = ttk.Frame(list_frame)
-        list_mid.pack(fill="x", padx=8, pady=4)
+        list_mid.pack(fill="both", expand=True, padx=8, pady=4)
         self._ticker_listbox = ttk.Treeview(
-            list_mid, columns=("ticker",), show="headings", height=5,
+            list_mid, columns=("ticker",), show="headings", height=14,
         )
         self._ticker_listbox.heading("ticker", text="Titres dans la liste")
-        self._ticker_listbox.column("ticker", width=120, anchor="center")
-        self._ticker_listbox.pack(side="left", fill="x", expand=True)
+        self._ticker_listbox.column("ticker", width=140, anchor="center")
+        self._ticker_listbox.pack(side="left", fill="both", expand=True)
+        list_scroll = ttk.Scrollbar(list_mid, orient="vertical",
+                                    command=self._ticker_listbox.yview)
+        list_scroll.pack(side="left", fill="y")
+        self._ticker_listbox.configure(yscrollcommand=list_scroll.set)
 
-        list_side = ttk.Frame(list_mid)
-        list_side.pack(side="left", padx=8, fill="y")
+        list_side = ttk.Frame(list_frame)
+        list_side.pack(side="right", padx=8, fill="y")
         ttk.Label(list_side, text="Ajouter :").pack(anchor="w")
-        ttk.Entry(list_side, textvariable=self.new_ticker, width=10).pack(anchor="w", pady=2)
+        ttk.Entry(list_side, textvariable=self.new_ticker, width=14).pack(anchor="w", pady=2)
         ttk.Button(list_side, text="+ Ajouter", command=self._add_ticker).pack(anchor="w", pady=2)
         ttk.Button(list_side, text="− Retirer", command=self._remove_ticker).pack(anchor="w", pady=2)
 
+        # ---- Page 2: Optimize (config + run + banners + circles + detail) --
         # ---- Section 2: Date range + mode -----------------------------
-        cfg_frame = ttk.LabelFrame(self.parent, text="②  Plage de dates et mode")
+        cfg_frame = ttk.LabelFrame(opt_page, text="Plage de dates et mode")
         cfg_frame.pack(fill="x", padx=6, pady=2)
 
         cfg_top = ttk.Frame(cfg_frame)
@@ -390,7 +340,7 @@ class OptimizerPanel:
              "Croisés : les familles peuvent utiliser les heures étendues de l'autre (pré-marché, after-marché, etc.).")
 
         # ---- Section 3: Run button + status ---------------------------
-        actions = ttk.Frame(self.parent)
+        actions = ttk.Frame(opt_page)
         actions.pack(fill="x", padx=6, pady=4)
         self.run_btn = ttk.Button(actions, text="⚙  Optimiser", command=self._on_optimize)
         self.run_btn.pack(side="left")
@@ -398,7 +348,7 @@ class OptimizerPanel:
         ttk.Label(actions, textvariable=self.progress).pack(side="right", padx=12)
 
         # ---- Section 4: Best-result banners ---------------------------
-        banner = ttk.Frame(self.parent)
+        banner = ttk.Frame(opt_page)
         banner.pack(fill="x", padx=6, pady=2)
         self.day_banner = StringVar(value="Jour : en attente")
         self.night_banner = StringVar(value="Nuit : en attente")
@@ -409,32 +359,74 @@ class OptimizerPanel:
                                           font=(FONT_FAMILY, 12, "bold"), foreground=NIGHT_COLOR)
         self.night_banner_lbl.pack(anchor="w", padx=8)
 
-        # ---- Section 5: Interactive crossing rings -------------------
-        circles = ttk.Frame(self.parent)
+        # ---- Section 5: Interactive profit/loss circles --------------
+        circles = ttk.Frame(opt_page)
         circles.pack(fill="x", padx=6, pady=4)
         self.rings = _CrossRings(circles, DAY_COLOR, NIGHT_COLOR)
 
         # ---- Section 6: Per-ticker detail -----------------------------
-        detail_box = ttk.LabelFrame(self.parent, text="Détail par titre (meilleur créneau)")
+        detail_box = ttk.LabelFrame(opt_page, text="Détail par titre (meilleur créneau)")
         detail_box.pack(fill="both", expand=True, padx=6, pady=4)
+        detail_inner = ttk.Frame(detail_box)
+        detail_inner.pack(fill="both", expand=True, padx=6, pady=6)
         self.detail_tree = ttk.Treeview(
-            detail_box,
+            detail_inner,
             columns=("ticker", "family", "slot", "compounded", "win"),
             show="headings",
-            height=8,
+            height=10,
         )
+        self._detail_sort: tuple[str, bool] = ("compounded", False)  # (col, descending)
         for col, head, width in (
-            ("ticker", "Titre", 90),
-            ("family", "Famille", 70),
-            ("slot", "Créneau", 150),
-            ("compounded", "Composé %", 100),
-            ("win", "Gains %", 80),
+            ("ticker", "Titre", 110),
+            ("family", "Famille", 90),
+            ("slot", "Créneau achat → vente", 220),
+            ("compounded", "Composé %", 120),
+            ("win", "Taux de réussite", 150),
         ):
-            self.detail_tree.heading(col, text=head)
+            self.detail_tree.heading(col, text=head, command=lambda c=col: self._sort_detail_by(c))
             self.detail_tree.column(col, width=width, anchor="center")
         self.detail_tree.tag_configure("pos", foreground="#15803d")
         self.detail_tree.tag_configure("neg", foreground="#dc2626")
-        self.detail_tree.pack(fill="both", expand=True, padx=6, pady=2)
+        self.detail_tree.pack(side="left", fill="both", expand=True)
+        detail_scroll = ttk.Scrollbar(detail_inner, orient="vertical",
+                                     command=self.detail_tree.yview)
+        detail_scroll.pack(side="left", fill="y")
+        self.detail_tree.configure(yscrollcommand=detail_scroll.set)
+
+    def _on_page_change(self, _event) -> None:
+        """Re-sync widget sizes when the sub-notebook page changes."""
+        self.parent.update_idletasks()
+
+    def _sort_detail_by(self, col: str) -> None:
+        """Sort the detail table by ``col``; click again to reverse direction."""
+        cur_col, cur_desc = self._detail_sort
+        if cur_col == col:
+            desc = not cur_desc
+        else:
+            desc = False  # default ascending on a new column
+        self._detail_sort = (col, desc)
+        self._resort_detail()
+
+    def _resort_detail(self) -> None:
+        """Reorder existing detail rows by the current sort column/direction."""
+        col, desc = self._detail_sort
+        det = self.detail_tree
+        items = det.get_children()
+        keyed = []
+        for item in items:
+            vals = det.set(item)
+            raw = vals.get(col, "")
+            try:
+                key = float(raw.rstrip("%").replace("—", "nan") or "nan")
+            except ValueError:
+                key = raw
+            keyed.append((key, item))
+        # NaNs (failed tickers) always sink to the bottom regardless of direction.
+        keyed.sort(key=lambda kv: (1 if isinstance(kv[0], float) and kv[0] != kv[0] else 0,
+                                   kv[0]),
+                   reverse=desc)
+        for _, item in keyed:
+            det.move(item, "", "end")
 
     # ------------------------------------------------------------------
     # List management
@@ -752,7 +744,16 @@ class OptimizerPanel:
 
     def _render_partial(self, done: int, total: int, days_back: int, final: bool = False) -> None:
         rows = self._aggregate_rows()
-        self._render_results(rows, self._per_ticker, days_back, partial=not final)
+        # During optimization, only refresh the (expensive) circles at most once
+        # per second; the progress label and detail table still update every
+        # batch. The final render always redraws everything, animated.
+        now = time.monotonic()
+        last = getattr(self, "_last_ring_ms", 0.0)
+        ring_due = final or (now - last) >= 1.0
+        if ring_due:
+            self._last_ring_ms = now
+        self._render_results(rows, self._per_ticker, days_back,
+                             partial=not final, refresh_rings=ring_due)
         self.progress.set(f"{done} / {total}")
 
     def _trade_segments(self, row: dict | None = None) -> list[tuple[str, float]]:
@@ -777,6 +778,7 @@ class OptimizerPanel:
         per_ticker: list[dict],
         days_back: int,
         partial: bool = False,
+        refresh_rings: bool = True,
     ) -> None:
         if not partial:
             self.run_btn.configure(state="normal")
@@ -788,11 +790,23 @@ class OptimizerPanel:
         best_night = next((r for r in rows if r["family"] == "Nuit"), None)
 
         # Update banners with the single best buy/sell hour per family.
+        def _fmt_slot(slot: str) -> str:
+            """Extract a readable 'achat XX:XX → vente XX:XX' from a slot string.
+
+            Slots look like 'JOUR 10:00 → 15:00' or 'NUIT 16:00 → 09:10'.
+            """
+            if "→" in slot:
+                left, right = slot.split("→", 1)
+                buy = left.strip().split(" ")[-1]
+                sell = right.strip().split(" ")[0]
+                return f"achat {buy}  →  vente {sell}"
+            return slot
+
         if mode in (MODE_DAY, MODE_BOTH, MODE_CROSS):
             if best_day:
                 self.day_banner.set(
-                    f"Jour :  achat {best_day['slot'].split(' ')[1].split('→')[0]}  →  "
-                    f"vente {best_day['slot'].split('→')[1]}  |  {best_day['compounded']:+.2f}% composé"
+                    f"Jour :  {_fmt_slot(best_day['slot'])}  |  "
+                    f"{best_day['compounded']:+.2f}% composé"
                 )
             elif not partial:
                 self.day_banner.set("Jour : aucun créneau exploitable")
@@ -802,20 +816,29 @@ class OptimizerPanel:
         if mode in (MODE_NIGHT, MODE_BOTH, MODE_CROSS):
             if best_night:
                 self.night_banner.set(
-                    f"Nuit :  achat {best_night['slot'].split(' ')[1].split('→')[0]}  →  "
-                    f"vente {best_night['slot'].split('→')[1]}  |  {best_night['compounded']:+.2f}% composé"
+                    f"Nuit :  {_fmt_slot(best_night['slot'])}  |  "
+                    f"{best_night['compounded']:+.2f}% composé"
                 )
             elif not partial:
                 self.night_banner.set("Nuit : aucun créneau exploitable")
         else:
             self.night_banner.set("Nuit : non optimisé (mode Jour)")
 
-        # Update the interactive crossing rings.
-        self.rings.set_rings(
-            self._trade_segments(best_day),
-            self._trade_segments(best_night),
-            crossover=bool(getattr(self, "_crossover", False)),
-        )
+        # Update the interactive per-ticker scatter circles.
+        # Each circle gets one dot per ticker in that family (green = positive
+        # return, red = negative, gray = ~0). Static during optimization
+        # (no per-dot after() animation → no lag); animated only on the final
+        # render. Skipped when refresh_rings is False (throttled to ~1/s).
+        if refresh_rings:
+            day_pts = [(p["ticker"], p["compounded"]) for p in per_ticker
+                        if p.get("family") == "Jour" and p.get("compounded") == p.get("compounded")]
+            night_pts = [(p["ticker"], p["compounded"]) for p in per_ticker
+                          if p.get("family") == "Nuit" and p.get("compounded") == p.get("compounded")]
+            self.rings.set_rings(
+                day_pts, night_pts,
+                crossover=bool(getattr(self, "_crossover", False)),
+                animate=not partial,
+            )
 
         # Update per-ticker detail table.
         det = self.detail_tree
@@ -836,6 +859,11 @@ class OptimizerPanel:
                 values=(p["ticker"], p["family"], p["slot"], comp, win),
                 tags=(tag,),
             )
+
+        # Reapply the user's current sort so re-population during optimization
+        # doesn't yank the table back to insertion order.
+        if hasattr(self, "_detail_sort"):
+            self._resort_detail()
 
         if not rows and not partial:
             self.status.set("Aucun créneau exploitable sur cette plage pour ces titres.")

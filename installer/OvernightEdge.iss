@@ -1,5 +1,5 @@
 #define MyAppName "Overnight Edge"
-#define MyAppVersion "2.5.0"
+#define MyAppVersion "3.0.0"
 #define MyAppPublisher "Overnight Edge"
 #define MyAppExeName "OvernightEdge.exe"
 
@@ -11,8 +11,8 @@ AppPublisher={#MyAppPublisher}
 DefaultDirName={autopf}\Overnight Edge
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
-LicenseFile=LICENSE.txt
-OutputDir=dist\GiveToBoss
+LicenseFile=..\LICENSE.txt
+OutputDir=..\dist\GiveToBoss
 OutputBaseFilename=OvernightEdgeSetup
 Compression=lzma2
 SolidCompression=yes
@@ -30,10 +30,10 @@ Name: "french"; MessagesFile: "compiler:Languages\French.isl"
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional shortcuts:"; Flags: checkedonce
 
 [Files]
-Source: "dist\OvernightEdge.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "FOR_THE_BOSS.md"; DestDir: "{app}"; DestName: "READ_ME_FIRST.txt"; Flags: ignoreversion
-Source: "EXECUTIVE_BRIEF.md"; DestDir: "{app}"; Flags: ignoreversion
-Source: "LICENSE.txt"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\dist\OvernightEdge.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\FOR_THE_BOSS.md"; DestDir: "{app}"; DestName: "READ_ME_FIRST.txt"; Flags: ignoreversion
+Source: "..\EXECUTIVE_BRIEF.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\LICENSE.txt"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"

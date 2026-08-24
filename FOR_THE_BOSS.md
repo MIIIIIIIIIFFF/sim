@@ -89,7 +89,8 @@ via **Paste symbols**.
 Yahoo limite les barres 5 minutes à ~60 jours. Pour aller plus loin :
 
 - **Accumulation locale** : chaque scan sauvegarde les barres 5 min dans
-  `%APPDATA%\OvernightEdge\bars_cache`. La fenêtre précise grandit chaque jour.
+  `<dossier d'installation>\bars_cache` (à côté de `OvernightEdge.exe`).
+  La fenêtre précise grandit chaque jour.
 - **Repli quotidien** : pour une période > 60 jours, l'outil utilise les barres
   quotidiennes (~10 ans) : achat = close du jour T, vente = open du jour T+1.
   Résultat marqué **« Approximatif »** (pas de vrai pré-marché 09:29).
@@ -116,11 +117,13 @@ chaque cycle, exactement comme le scan principal). L'optimiseur maximise ce
 rendement pour choisir le meilleur créneau **jour** et le meilleur créneau
 **nuit**.
 
-**Deux cercles animés** reportent la répartition des jours du meilleur créneau :
-arcs **verts** = jours gagnants, **gris** = jour à zéro, **rouges** = jours
-perdants — on voit d'un coup d'œil l'écart entre les profits et les pertes.
-L'animation se met à jour **en temps réel** pendant l'analyse (résultats
-progressifs par titre, en parallèle).
+**Deux cercles animés** reportent le **rendement par titre** : un point par
+ticker, **vert** au-dessus de zéro (rendement positif), **rouge** en-dessous
+(perte), **gris** ~zéro, taille du point proportionnelle à l'ampleur du
+rendement — on voit d'un coup d'œil quels titres gagnent et lesquels perdent.
+Pendant l'analyse les cercles se rafraîchissent environ **une fois par seconde**
+(sans saccade) ; l'animation des points un par un se joue une seule fois à la
+fin (les cercles restent **fixes** après l'optimisation, sans bug ni boucle).
 
 Comment l'utiliser :
 1. **« Jours à remonter (0–30) »** : taille de la fenêtre (0 → dernière semaine).
@@ -131,23 +134,24 @@ Comment l'utiliser :
    dans le S&P 500) → il est téléchargé puis intégré à l'optimisation.
 5. Cliquez **Optimiser**.
 
+L'onglet est organisé en **deux sous-pages** :
+- **① Listes de titres** : créez / éditez vos listes (pleine hauteur).
+- **② Optimiser** : plage de dates, mode, bouton, bannières de résultats, cercles
+  et tableau de détail.
+
 Résultats :
-- **Table des créneaux** : tous les couples achat×vente, triés par composé
-  moyen sur les titres (meilleur surligné) — lignes **Jour** et **Nuit**.
-- **Détail des titres** : le meilleur créneau de chaque titre, son composé et
-  son taux de gain.
+- **Bannières** : meilleur créneau Jour et Nuit (achat → vente, composé %).
+- **Cercles** : répartition profit / perte de chaque famille.
+- **Détail par titre** : le meilleur créneau de chaque titre, son composé et
+  son taux de gain. **Cliquez un en-tête de colonne pour trier** (Titre, Famille,
+  Créneau, Composé %, Taux de réussite) ; recliquez pour inverser. Le tri est
+  conservé pendant toute l'optimisation.
 - Chaque jour et chaque titre se voient ainsi sous l'angle de la fenêtre de
   temps choisie, pour un terminal en direct (risque de composition intra-jour).
 
 Les créneaux de **Jour** n'achètent que pendant les heures de marché normales
 (09:30 → 10:30) ; les créneaux de **Nuit** n'achètent qu'à la clôture /
 after-hours (16:00 → 16:30) et ne vendent qu'en pré-ouverture (09:00 → 09:25).
-
-**Option « Croiser les cercles »** : en passant sur `Oui`, on autorise chaque
-famille à empiéter sur les heures étendues de l'autre (Jour achète aussi
-pré-marché / vend après-marché ; Nuit achète aussi avant la clôture / vend
-après l'ouverture). Le répertoire de créneaux passe à 110 par famille. Les
-cercles restent côte à côte — l'option agit sur la **logique** de recherche.
 
 Les favoris sont sauvegardés sur disque (`%APPDATA%\OvernightEdge\optimizer_favorites.json`)
 et retrouvés au prochain lancement.

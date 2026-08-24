@@ -38,8 +38,11 @@ def history_dir() -> Path:
 
 
 def bars_cache_dir() -> Path:
-    """Local 5-min bar cache. Accumulates over time so users can backtest
-    further back than Yahoo's ~60-day 5-minute limit."""
-    path = user_data_dir() / "bars_cache"
+    """Local 5-min bar cache. Lives next to the installed EXE so the accumulated
+    data travels with the app folder; in development it stays under user data."""
+    if getattr(sys, "frozen", False):
+        path = application_dir() / "bars_cache"
+    else:
+        path = user_data_dir() / "bars_cache"
     path.mkdir(parents=True, exist_ok=True)
     return path

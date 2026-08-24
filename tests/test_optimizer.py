@@ -215,32 +215,28 @@ def test_crossover_night_can_buy_before_close_and_sell_after_open():
 
 
 def test_cross_rings_renders_dots_and_tip():
-    """_CrossRings renders dots for both families and a hover tooltip payload."""
+    """The two per-ticker scatter circles render a dot per ticker for both families."""
     import tkinter as tk
 
     from overnight_edge.optimizer_panel import _CrossRings
 
     try:
         root = tk.Tk()
-    except Exception:  # noqa: BLE001  (headless env) 
+    except Exception:  # noqa: BLE001  (headless env)
         pytest.skip("Tkinter display not available")
     root.withdraw()
     try:
         rings = _CrossRings(root, "#2e86c1", "#8e44ad")
         rings.set_rings(
-            day_segments=[("profit", 1.2), ("loss", -0.8), ("zero", 0.0)],
-            night_segments=[("profit", 0.6), ("loss", -1.1)],
+            day_points=[("NVDA", 1.2), ("AAPL", -0.8), ("JPM", 0.0)],
+            night_points=[("MSFT", 0.6), ("GOOG", -1.1)],
             crossover=True,
         )
         root.update_idletasks()
-        items = rings.canvas.find_all()
-        assert len(items) > 0
-        assert len(rings._day_dots) == 3
-        assert len(rings._night_dots) == 2
-        # Simulate a motion event hovering the first day dot; the tip is drawn.
-        cid = rings._day_dots[0][0]
-        x0, y0, x1, y1 = rings.canvas.coords(cid)
-        rings._on_motion(type("E", (), {"x": (x0 + x1) / 2, "y": (y0 + y1) / 2}))
-        assert rings.canvas.find_withtag("tip")
+        # Each scatter draws its outline + zero baseline + dots + center label.
+        assert rings.canvas.find_all(), "day scatter empty"
+        assert rings.night.canvas.find_all(), "night scatter empty"
+        assert rings.day._points == [("NVDA", 1.2), ("AAPL", -0.8), ("JPM", 0.0)]
+        assert len(rings.night._points) == 2
     finally:
         root.destroy()
